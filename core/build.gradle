@@ -2,6 +2,8 @@
 eclipse.project.name = appName + '-core'
 
 dependencies {
+  implementation project(':rules')
+
   api "com.badlogicgames.gdx:gdx:$gdxVersion"
 
   if(enableGraalNative == 'true') {
