@@ -1,6 +1,6 @@
 package io.github.toflking.gloomhaven.rendering;
 
-import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.math.Vector3;
 import io.github.toflking.gloomhaven.rules.hex.HexPosition;
 
 public final class HexGridLayout {
@@ -19,31 +19,31 @@ public final class HexGridLayout {
         this.hexSize = hexSize;
     }
 
-    public Vector2 hexToWorld(
+    public Vector3 hexToWorld(
         HexPosition position,
-        Vector2 result
+        Vector3 result
     ) {
         float x =
             hexSize
                 * 1.5f
                 * position.q();
 
-        float y =
+        float z =
             hexSize
                 * SQRT_3
                 * (position.r() + position.q() / 2f);
 
-        return result.set(x, y);
+        return result.set(x, 0f, z);
     }
 
-    public HexPosition worldToHex(Vector2 worldPosition) {
+    public HexPosition worldToHex(float x, float z) {
         float fractionalQ =
-            (2f / 3f * worldPosition.x)
+            (2f / 3f * x)
                 / hexSize;
 
         float fractionalR =
-            (-1f / 3f * worldPosition.x
-                + SQRT_3 / 3f * worldPosition.y)
+            (-1f / 3f * x
+                + SQRT_3 / 3f * z)
                 / hexSize;
 
         return roundAxial(fractionalQ, fractionalR);
