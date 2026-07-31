@@ -406,6 +406,9 @@ com.badlogic.gdx.scenes.scene2d.ui.Window$WindowStyle: {
     com.badlogic.gdx.scenes.scene2d.ui.TextButton$TextButtonStyle: {
         default: { up: buttonUp, over: buttonOver, down: buttonDown, disabled: buttonDisabled, font: default, fontColor: font,
             overFontColor: fontOver, downFontColor: fontDown, disabledFontColor: fontDisabled, pressedOffsetY: -1, pressedOffsetX: 1 },
+        scenario-action: { up: button-normal, over: button-normal-over, down: button-normal-pressed, disabled: buttonDisabled,
+            font: default, fontColor: white, overFontColor: white, downFontColor: white, disabledFontColor: fontDisabled,
+            pressedOffsetY: -1, pressedOffsetX: 1 },
         toggle: { up: buttonUp, over: buttonOver, down: buttonDown, checked: buttonChecked, checkedOver: buttonCheckedOver,
             disabled: buttonDisabled, font: default, fontColor: font, overFontColor: fontOver, downFontColor: fontDown, disabledFontColor:
             fontDisabled, checkedFontColor: fontChecked, checkedOverFontColor: fontCheckedOver, pressedOffsetY: -1, pressedOffsetX: 1 },
