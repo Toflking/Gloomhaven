@@ -32,13 +32,15 @@ public final class ScenarioHud implements Disposable {
     private final TextButton undoButton;
     private final TextButton skipButton;
     private final TextButton endTurnButton;
+    private final TextButton manuallyFillButton;
+    private final TextButton autoFillButton;
     private final List<TextButton> cardButtons = new ArrayList<>();
 
     private FigureId activeFigure;
     private ScenarioInteractionState interactionState =
         new IdleInteraction();
 
-    public ScenarioHud(Skin skin, Consumer<GameCommand> commandHandler) {
+    public ScenarioHud(Skin skin, Consumer<GameCommand> commandHandler, Consumer<SelectionOption> selectionOptionHandler) {
         stage = new Stage(new ScreenViewport());
 
         phaseLabel = new Label("", skin);
@@ -55,9 +57,14 @@ public final class ScenarioHud implements Disposable {
                     case IdleInteraction idle -> {}
                     case MovePathInteraction movement ->
                         commandHandler.accept(new ChooseMovePathCommand(movement.getPath()));
-                    case AttackTargetInteraction targeting ->
+                    case AttackTargetInteraction targeting -> {
+                        if (targeting.getSelectionMode() == TargetSelectionMode.FIXED && targeting.areAllEligibleTargetsSelected()) {
+                            return;
+                        }
                         commandHandler.accept(new ChooseAttackTargetsCommand(targeting.getSelectedTargets()));
-                    case AreaPlacementInteraction area -> {}
+                    }
+                    case AreaPlacementInteraction area -> {
+                    }
                 }
             }
         });
@@ -123,6 +130,27 @@ public final class ScenarioHud implements Disposable {
             }
         });
 
+        manuallyFillButton = new TextButton("Fill Manually", skin, "scenario-action");
+        manuallyFillButton.addListener(new ChangeListener() {
+            @Override
+            public void changed(ChangeEvent event, Actor actor) {
+                if (!(interactionState instanceof AttackTargetInteraction targeting)) return;
+                targeting.getSelectedTargets().clear();
+                selectionOptionHandler.accept(SelectionOption.MANUAL);
+            }
+        });
+
+        autoFillButton = new TextButton("Auto Fill", skin, "scenario-action");
+        autoFillButton.addListener(new ChangeListener() {
+            @Override
+            public void changed(ChangeEvent event, Actor actor) {
+                if (!(interactionState instanceof AttackTargetInteraction targeting)) return;
+                targeting.replaceSelectedTargets(targeting.getEligibleTargets().stream().toList());
+                selectionOptionHandler.accept(SelectionOption.AUTOMATIC);
+            }
+        });
+
+
         Table root = new Table();
         root.setFillParent(true);
         root.top().left();
@@ -136,6 +164,9 @@ public final class ScenarioHud implements Disposable {
         root.add(confirmButton).padTop(10f);
         root.add(cancelButton).padTop(10f);
         root.add(skipButton).padTop(10f);
+        root.row();
+        root.add(manuallyFillButton).padTop(10f);
+        root.add(autoFillButton).padTop(10f);
         root.row();
 
         Table movementButtons = new Table();

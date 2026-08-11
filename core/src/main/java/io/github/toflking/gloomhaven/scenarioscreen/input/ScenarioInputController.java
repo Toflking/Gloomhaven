@@ -15,7 +15,8 @@ public final class ScenarioInputController extends InputAdapter {
     private final Viewport worldViewport;
     private final HexBoardRenderer boardRenderer;
     private final OrbitCameraController cameraController;
-    private final Consumer<HexPosition> boardClickHandler;
+    private final Consumer<HexPosition> boardLeftClickHandler;
+    private final Consumer<HexPosition> boardRightClickHandler;
     private final IntSet pressedKeys = new IntSet();
 
     private HexPosition hoveredHex;
@@ -24,12 +25,13 @@ public final class ScenarioInputController extends InputAdapter {
         Viewport worldViewport,
         HexBoardRenderer boardRenderer,
         OrbitCameraController cameraController,
-        Consumer<HexPosition> boardClickHandler
+        Consumer<HexPosition> boardLeftClickHandler,
+        Consumer<HexPosition> boardRightClickHandler
     ) {
         if (worldViewport == null
             || boardRenderer == null
             || cameraController == null
-            || boardClickHandler == null) {
+            || boardLeftClickHandler == null) {
 
             throw new IllegalArgumentException(
                 "Input controller dependencies cannot be null"
@@ -39,7 +41,8 @@ public final class ScenarioInputController extends InputAdapter {
         this.worldViewport = worldViewport;
         this.boardRenderer = boardRenderer;
         this.cameraController = cameraController;
-        this.boardClickHandler = boardClickHandler;
+        this.boardLeftClickHandler = boardLeftClickHandler;
+        this.boardRightClickHandler = boardRightClickHandler;
     }
 
     public void update(float delta) {
@@ -93,16 +96,20 @@ public final class ScenarioInputController extends InputAdapter {
         int pointer,
         int button
     ) {
-        if (button != Input.Buttons.LEFT) {
-            return false;
-        }
-
         HexPosition clickedHex = pickHex(screenX, screenY);
         if (clickedHex == null) {
             return false;
         }
 
-        boardClickHandler.accept(clickedHex);
+        if (button == Input.Buttons.LEFT) {
+            boardLeftClickHandler.accept(clickedHex);
+        } else if (button == Input.Buttons.RIGHT) {
+            boardRightClickHandler.accept(clickedHex);
+        } else {
+            return false;
+        }
+
+
         return true;
     }
 

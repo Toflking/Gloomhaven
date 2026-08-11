@@ -21,6 +21,7 @@ import java.util.Set;
 
 public final class ScenarioInteractionController {
     private final ScenarioState scenarioState;
+    private SelectionOption selectionOption = SelectionOption.MANUAL;
 
     private HexPosition selectedHex;
     private ScenarioInteractionState interactionState =
@@ -33,7 +34,7 @@ public final class ScenarioInteractionController {
         );
     }
 
-    public void handleBoardClick(HexPosition clickedHex) {
+    public void handleBoardLeftClick(HexPosition clickedHex) {
         selectedHex = null;
 
         switch (interactionState) {
@@ -41,9 +42,19 @@ public final class ScenarioInteractionController {
             case MovePathInteraction movement ->
                 updateMovementPreview(clickedHex, movement);
             case AttackTargetInteraction targeting ->
-                updateTargetSelection(clickedHex, targeting);
+                addToTargetSelection(clickedHex, targeting);
             case AreaPlacementInteraction area ->
                 updateAreaPlacement(clickedHex, area);
+        }
+    }
+
+    public void handleBoardRightClick(HexPosition clickedHex) {
+        switch (interactionState) {
+            case IdleInteraction ignored -> {}
+            case MovePathInteraction movement -> {}
+            case AttackTargetInteraction targeting ->
+                removeFromTargetSelection(clickedHex, targeting);
+            case AreaPlacementInteraction area -> {}
         }
     }
 
@@ -71,6 +82,10 @@ public final class ScenarioInteractionController {
             duplicates,
             selectionMode
         );
+        switch (selectionMode) {
+            case FIXED ->  selectionOption = SelectionOption.AUTOMATIC;
+            case MANUAL -> selectionOption = SelectionOption.MANUAL;
+        }
     }
 
     public void finishInteraction() {
@@ -155,11 +170,8 @@ public final class ScenarioInteractionController {
         ));
     }
 
-    private void updateTargetSelection(
-        HexPosition clickedHex,
-        AttackTargetInteraction targeting
-    ) {
-        if (targeting.getSelectionMode() == TargetSelectionMode.FIXED) {
+    private void addToTargetSelection(HexPosition clickedHex, AttackTargetInteraction targeting) {
+        if (selectionOption == SelectionOption.AUTOMATIC) {
             return;
         }
 
@@ -168,6 +180,8 @@ public final class ScenarioInteractionController {
         if (selectedFigure == null) {
             return;
         }
+
+        if (!targeting.getEligibleTargets().contains(selectedFigure.id())) return;
 
         List<FigureId> selectedTargets = targeting.getSelectedTargets();
 
@@ -193,6 +207,22 @@ public final class ScenarioInteractionController {
                 selectedTargets.add(selectedFigure.id());
             }
         }
+    }
+
+    public void removeFromTargetSelection(HexPosition clickedHex, AttackTargetInteraction targeting) {
+        if (selectionOption == SelectionOption.AUTOMATIC) {
+            return;
+        }
+
+        Figure selectedFigure =
+            scenarioState.figureAt(clickedHex).orElse(null);
+        if (selectedFigure == null) {
+            return;
+        }
+
+        List<FigureId> selectedTargets = targeting.getSelectedTargets();
+
+        selectedTargets.remove(selectedFigure.id());
     }
 
     private void updateAreaPlacement(
@@ -238,5 +268,14 @@ public final class ScenarioInteractionController {
         }
 
         interactionState = restored;
+    }
+
+    public void setSelectionOption(SelectionOption selectionOption) {
+        this.selectionOption = Objects.requireNonNull(selectionOption);
+    }
+
+
+    public SelectionOption selectionOption() {
+        return selectionOption;
     }
 }

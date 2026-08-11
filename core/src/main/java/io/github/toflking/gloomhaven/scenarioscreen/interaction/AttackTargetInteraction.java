@@ -36,7 +36,7 @@ public final class AttackTargetInteraction implements ScenarioInteractionState {
             selectionMode,
             "selectionMode"
         );
-        // todo: Still allow order of selection - first auto fill -> button to cancel and choose manuelly -> button to fill remaining
+
         if (selectionMode == TargetSelectionMode.FIXED) {
             selectedTargets.addAll(this.eligibleTargets);
         }
@@ -64,6 +64,11 @@ public final class AttackTargetInteraction implements ScenarioInteractionState {
 
     public List<FigureId> getSelectedTargets() {
         return selectedTargets;
+    }
+
+    public boolean areAllEligibleTargetsSelected() {
+        return eligibleTargets.size() == selectedTargets.size()
+            && eligibleTargets.containsAll(selectedTargets);
     }
 
     public void replaceSelectedTargets(List<FigureId> targets) {

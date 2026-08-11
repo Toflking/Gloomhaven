@@ -101,13 +101,15 @@ public final class ScenarioScreen extends ScreenAdapter {
             skin,
             command -> eventHandler.handle(
                 scenarioEngine.execute(command)
-            )
+            ),
+            interactionController::setSelectionOption
         );
         inputController = new ScenarioInputController(
             viewport,
             boardRenderer,
             cameraController,
-            interactionController::handleBoardClick
+            interactionController::handleBoardLeftClick,
+            interactionController::handleBoardRightClick
         );
         inputMultiplexer = new InputMultiplexer(
             hud.stage(),
