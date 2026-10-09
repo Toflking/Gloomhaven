@@ -17,6 +17,7 @@ import io.github.toflking.gloomhaven.rules.command.SkipActionCommand;
 import io.github.toflking.gloomhaven.rules.command.UndoCommand;
 import io.github.toflking.gloomhaven.rules.content.cards.CardCatalog;
 import io.github.toflking.gloomhaven.rules.content.cards.DebugCards;
+import io.github.toflking.gloomhaven.rules.event.MoveChoiceRequestedEvent;
 import io.github.toflking.gloomhaven.rules.event.UndoPerformedEvent;
 import io.github.toflking.gloomhaven.rules.figure.Figure;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
@@ -47,6 +48,8 @@ class ScenarioEngineUndoTest {
     private static final FigureId MONSTER = new FigureId("monster");
     private static final HexPosition START = new HexPosition(0, 0);
     private static final HexPosition DESTINATION = new HexPosition(0, 1);
+    private static final HexPosition SECOND_DESTINATION =
+        new HexPosition(0, 2);
     private static final HexPosition MONSTER_HEX = new HexPosition(1, 0);
 
     @Test
@@ -224,6 +227,84 @@ class ScenarioEngineUndoTest {
     }
 
     @Test
+    void movementCanBeCommittedInFragments() {
+        ScenarioState state = scenario();
+        ScenarioEngine engine = debugEngine(state);
+        engine.execute(new PlayCardActionCommand(
+            new AbilitySource(
+                new AbilityCardId("debug-move-2"),
+                CardHalf.TOP
+            )
+        ));
+
+        CommandResult firstFragment = engine.execute(
+            new ChooseMovePathCommand(List.of(START, DESTINATION))
+        );
+
+        assertTrue(firstFragment.accepted());
+        assertEquals(DESTINATION, state.positionOf(PLAYER));
+        PendingMoveChoice remainingChoice = assertInstanceOf(
+            PendingMoveChoice.class,
+            state.execution().pendingChoice()
+        );
+        assertEquals(1, remainingChoice.movementPoints());
+        assertFalse(state.execution().canCancel());
+        MoveChoiceRequestedEvent nextChoice = assertInstanceOf(
+            MoveChoiceRequestedEvent.class,
+            firstFragment.events().getLast()
+        );
+        assertEquals(1, nextChoice.amount());
+
+        CommandResult secondFragment = engine.execute(
+            new ChooseMovePathCommand(List.of(
+                DESTINATION,
+                SECOND_DESTINATION
+            ))
+        );
+
+        assertTrue(secondFragment.accepted());
+        assertEquals(SECOND_DESTINATION, state.positionOf(PLAYER));
+        assertNull(state.execution());
+    }
+
+    @Test
+    void undoAndSkipPreserveFragmentedMovementState() {
+        ScenarioState state = scenario();
+        ScenarioEngine engine = debugEngine(state);
+        engine.execute(new PlayCardActionCommand(
+            new AbilitySource(
+                new AbilityCardId("debug-move-2"),
+                CardHalf.TOP
+            )
+        ));
+        engine.execute(new ChooseMovePathCommand(
+            List.of(START, DESTINATION)
+        ));
+
+        engine.execute(new SkipActionCommand());
+        assertNull(state.execution());
+
+        engine.execute(new UndoCommand());
+        assertEquals(DESTINATION, state.positionOf(PLAYER));
+        PendingMoveChoice afterSkipUndo = assertInstanceOf(
+            PendingMoveChoice.class,
+            state.execution().pendingChoice()
+        );
+        assertEquals(1, afterSkipUndo.movementPoints());
+        assertFalse(state.execution().canCancel());
+
+        engine.execute(new UndoCommand());
+        assertEquals(START, state.positionOf(PLAYER));
+        PendingMoveChoice afterFragmentUndo = assertInstanceOf(
+            PendingMoveChoice.class,
+            state.execution().pendingChoice()
+        );
+        assertEquals(2, afterFragmentUndo.movementPoints());
+        assertTrue(state.execution().canCancel());
+        assertFalse(state.execution().hasPerformedAbility());
+    }
+
+    @Test
     void skippingLocksCancellationWithoutPerformingAnAbility() {
         ScenarioState state = scenario();
         ScenarioEngine engine = debugEngine(state);
@@ -304,6 +385,7 @@ class ScenarioEngineUndoTest {
             Map.of(
                 START, normal,
                 DESTINATION, normal,
+                SECOND_DESTINATION, normal,
                 MONSTER_HEX, normal
             ),
             Set.of()

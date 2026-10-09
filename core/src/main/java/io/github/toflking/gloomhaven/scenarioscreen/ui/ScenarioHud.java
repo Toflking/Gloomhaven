@@ -58,7 +58,7 @@ public final class ScenarioHud implements Disposable {
                     case MovePathInteraction movement ->
                         commandHandler.accept(new ChooseMovePathCommand(movement.getPath()));
                     case AttackTargetInteraction targeting -> {
-                        if (targeting.getSelectionMode() == TargetSelectionMode.FIXED && targeting.areAllEligibleTargetsSelected()) {
+                        if (targeting.getSelectionMode() == TargetSelectionMode.FIXED && !targeting.areAllEligibleTargetsSelected()) {
                             return;
                         }
                         commandHandler.accept(new ChooseAttackTargetsCommand(targeting.getSelectedTargets()));

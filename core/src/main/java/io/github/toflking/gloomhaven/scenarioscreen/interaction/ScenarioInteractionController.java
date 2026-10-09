@@ -187,17 +187,14 @@ public final class ScenarioInteractionController {
 
         switch (targeting.getDuplicates()) {
             case DISTINCT_TARGETS -> {
-                if (selectedTargets.contains(selectedFigure.id())
-                    && selectedTargets.size()
-                    >= targeting.getMinimumTargets()) {
+                if (selectedTargets.contains(selectedFigure.id())) {
                     selectedTargets.remove(selectedFigure.id());
-                } else {
-                    if (selectedTargets.size()
-                        >= targeting.getMaximumTargets()) {
-                        return;
-                    }
-                    selectedTargets.add(selectedFigure.id());
+                    return;
                 }
+                if (selectedTargets.size() >= targeting.getMaximumTargets()) {
+                    return;
+                }
+                selectedTargets.add(selectedFigure.id());
             }
             case REPEATED_TARGETS_ALLOWED -> {
                 if (selectedTargets.size()
@@ -242,8 +239,8 @@ public final class ScenarioInteractionController {
             movement.movementType()
         );
 
-        if (event.undoneCommand() instanceof ChooseMovePathCommand command) {
-            restored.setPath(command.path());
+        if (event.undoneCommand() instanceof ChooseMovePathCommand(List<HexPosition> path)) {
+            restored.setPath(path);
         }
 
         interactionState = restored;
@@ -262,9 +259,8 @@ public final class ScenarioInteractionController {
             attack.selectionMode()
         );
 
-        if (event.undoneCommand()
-            instanceof ChooseAttackTargetsCommand command) {
-            restored.replaceSelectedTargets(command.targets());
+        if (event.undoneCommand() instanceof ChooseAttackTargetsCommand(List<FigureId> targets)) {
+            restored.replaceSelectedTargets(targets);
         }
 
         interactionState = restored;

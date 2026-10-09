@@ -92,7 +92,7 @@ public final class MovePathValidator {
             );
         }
 
-        return ValidationResult.valid();
+        return ValidationResult.valid(movementSpent);
     }
 
     private int movementCost(HexPosition position, MovementType movementType) {

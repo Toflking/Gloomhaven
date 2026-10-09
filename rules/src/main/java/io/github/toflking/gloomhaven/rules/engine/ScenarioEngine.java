@@ -145,22 +145,35 @@ public final class ScenarioEngine {
         HexPosition from = state.positionOf(choice.figureId());
         HexPosition to = command.path().getLast();
 
+        int remaining = choice.movementPoints() - validation.movementSpent();
+
         List<GameEvent> events = new ArrayList<>();
 
-        state.moveFigure(
-            execution.actor(),
-            to
-        );
-
+        state.moveFigure(execution.actor(), to);
         execution.markAbilityPerformed();
 
         events.add(
             new FigureMovedEvent(execution.actor(), from, to)
         );
 
-        execution.completeCurrentAbility();
+        if (remaining == 0) {
+            execution.completeCurrentAbility();
+            continueExecution(events);
+        } else {
+            execution.clearPendingChoice();
+            execution.setPendingChoice(new PendingMoveChoice(
+                choice.figureId(),
+                remaining,
+                choice.movementType()
+            ));
 
-        continueExecution(events);
+            events.add(new MoveChoiceRequestedEvent(
+                choice.figureId(),
+                remaining,
+                choice.movementType()
+            ));
+
+        }
 
         return CommandResult.accepted(events);
     }
