@@ -1,19 +1,29 @@
 package io.github.toflking.gloomhaven.scenarioscreen.rendering.figure;
 
 import io.github.toflking.gloomhaven.rules.figure.Figure;
-import io.github.toflking.gloomhaven.rules.figure.FigureType;
+import io.github.toflking.gloomhaven.rules.figure.identities.CharacterIdentity;
+import io.github.toflking.gloomhaven.rules.figure.identities.FigureIdentity;
+import io.github.toflking.gloomhaven.rules.figure.identities.MonsterIdentity;
 
-import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
 public final class FigureSpriteCatalog {
-    private final Map<FigureType, FigureSpriteDefinition> definitions;
+    private static final Set<Class<? extends FigureIdentity>>
+        SUPPORTED_IDENTITIES = Set.of(
+            CharacterIdentity.class,
+            MonsterIdentity.class
+        );
+
+    private final Map<Class<? extends FigureIdentity>, FigureSpriteDefinition>
+        definitions;
     private final Set<String> assetPaths;
 
     public FigureSpriteCatalog(
-        Map<FigureType, FigureSpriteDefinition> definitions
+        Map<Class<? extends FigureIdentity>, FigureSpriteDefinition>
+            definitions
     ) {
         if (definitions == null) {
             throw new IllegalArgumentException(
@@ -21,14 +31,15 @@ public final class FigureSpriteCatalog {
             );
         }
 
-        EnumMap<FigureType, FigureSpriteDefinition> copy =
-            new EnumMap<>(FigureType.class);
-        copy.putAll(definitions);
+        Map<Class<? extends FigureIdentity>, FigureSpriteDefinition> copy =
+            new HashMap<>(definitions);
 
-        for (FigureType type : FigureType.values()) {
-            if (!copy.containsKey(type)) {
+        for (Class<? extends FigureIdentity> identityType
+            : SUPPORTED_IDENTITIES) {
+            if (!copy.containsKey(identityType)) {
                 throw new IllegalArgumentException(
-                    "Missing sprite definition for " + type
+                    "Missing sprite definition for "
+                        + identityType.getSimpleName()
                 );
             }
         }
@@ -44,13 +55,13 @@ public final class FigureSpriteCatalog {
 
     public static FigureSpriteCatalog createDefault() {
         return new FigureSpriteCatalog(Map.of(
-            FigureType.CHARACTER,
+            CharacterIdentity.class,
             new FigureSpriteDefinition(
                 "figures/character.png",
                 2.3f,
                 0.04f
             ),
-            FigureType.MONSTER,
+            MonsterIdentity.class,
             new FigureSpriteDefinition(
                 "figures/monster.png",
                 2.5f,
@@ -60,7 +71,16 @@ public final class FigureSpriteCatalog {
     }
 
     public FigureSpriteDefinition definitionFor(Figure figure) {
-        return definitions.get(figure.type());
+        FigureSpriteDefinition definition = definitions.get(
+            figure.type().getClass()
+        );
+        if (definition == null) {
+            throw new IllegalArgumentException(
+                "No sprite definition for figure identity "
+                    + figure.type().getClass().getSimpleName()
+            );
+        }
+        return definition;
     }
 
     public Set<String> assetPaths() {

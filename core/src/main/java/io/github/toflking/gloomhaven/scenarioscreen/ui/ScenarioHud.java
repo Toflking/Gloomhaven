@@ -64,6 +64,12 @@ public final class ScenarioHud implements Disposable {
                         commandHandler.accept(new ChooseAttackTargetsCommand(targeting.getSelectedTargets()));
                     }
                     case AreaPlacementInteraction area -> {
+                        if (!area.canConfirm()) {
+                            return;
+                        }
+                        commandHandler.accept(new ChooseAttackAreaCommand(
+                            area.currentPlacement().option()
+                        ));
                     }
                 }
             }
@@ -95,7 +101,8 @@ public final class ScenarioHud implements Disposable {
                             targeting.getSelectedTargets().clear();
                         }
                     }
-                    case AreaPlacementInteraction area -> {}
+                    case AreaPlacementInteraction ignored ->
+                        commandHandler.accept(new CancelActionCommand());
                 }
             }
         });
@@ -207,6 +214,18 @@ public final class ScenarioHud implements Disposable {
             commandHandler,
             "Attack 1 All Adj",
             DebugCards.ATTACK_1_ALL_ADJACENT
+        )).padRight(5f);
+        attackButtons.add(createCardButton(
+            skin,
+            commandHandler,
+            "Attack 2 Area R3",
+            DebugCards.ATTACK_2_AREA_RANGE_3
+        )).padRight(5f);
+        attackButtons.add(createCardButton(
+            skin,
+            commandHandler,
+            "Attack 1 Area Self",
+            DebugCards.ATTACK_1_AREA_AROUND_ORIGIN
         ));
         root.add(attackButtons).padTop(5f);
         root.row();
@@ -292,20 +311,31 @@ public final class ScenarioHud implements Disposable {
         switch (interactionState) {
             case IdleInteraction ignored -> {
                 confirmButton.setDisabled(true);
+                confirmButton.setVisible(false);
                 cancelButton.setDisabled(true);
-                confirmButton.setText("I am invisible :)"); // @codex ik ist nicht invis aber ka wie man macht
             }
             case MovePathInteraction ignored -> {
                 confirmButton.setDisabled(false);
+                confirmButton.setVisible(true);
                 cancelButton.setDisabled(false);
                 confirmButton.setText("Confirm Movement");
             }
             case AttackTargetInteraction targeting -> {
                 confirmButton.setDisabled(false);
+                confirmButton.setVisible(true);
                 cancelButton.setDisabled(false);
                 confirmButton.setText("Confirm Targets: " + targeting.getSelectedTargets().size() + "/" + targeting.getMaximumTargets());
             }
-            case AreaPlacementInteraction ignored -> {}
+            case AreaPlacementInteraction area -> {
+                confirmButton.setDisabled(!area.canConfirm());
+                confirmButton.setVisible(true);
+                cancelButton.setDisabled(false);
+                confirmButton.setText(
+                    area.canConfirm()
+                        ? "Confirm Area"
+                        : "Place Area"
+                );
+            }
         }
     }
 

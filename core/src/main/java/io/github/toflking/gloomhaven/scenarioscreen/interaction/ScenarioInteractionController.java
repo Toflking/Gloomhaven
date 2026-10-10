@@ -6,9 +6,13 @@ import io.github.toflking.gloomhaven.rules.ability.movement.MovementType;
 import io.github.toflking.gloomhaven.rules.board.HexPosition;
 import io.github.toflking.gloomhaven.rules.board.pathfinding.HexPathfinder;
 import io.github.toflking.gloomhaven.rules.command.ChooseAttackTargetsCommand;
+import io.github.toflking.gloomhaven.rules.command.ChooseAttackAreaCommand;
 import io.github.toflking.gloomhaven.rules.command.ChooseMovePathCommand;
 import io.github.toflking.gloomhaven.rules.event.UndoPerformedEvent;
+import io.github.toflking.gloomhaven.rules.execution.attack.AreaPlacementControl;
+import io.github.toflking.gloomhaven.rules.execution.attack.ResolvedAreaPlacement;
 import io.github.toflking.gloomhaven.rules.execution.choice.PendingAttackChoice;
+import io.github.toflking.gloomhaven.rules.execution.choice.PendingAreaAttackChoice;
 import io.github.toflking.gloomhaven.rules.execution.choice.PendingChoice;
 import io.github.toflking.gloomhaven.rules.execution.choice.PendingMoveChoice;
 import io.github.toflking.gloomhaven.rules.figure.Figure;
@@ -54,7 +58,8 @@ public final class ScenarioInteractionController {
             case MovePathInteraction movement -> {}
             case AttackTargetInteraction targeting ->
                 removeFromTargetSelection(clickedHex, targeting);
-            case AreaPlacementInteraction area -> {}
+            case AreaPlacementInteraction area ->
+                area.unlockAt(clickedHex);
         }
     }
 
@@ -88,6 +93,30 @@ public final class ScenarioInteractionController {
         }
     }
 
+    public void beginAreaPlacementChoice(
+        FigureId attacker,
+        List<ResolvedAreaPlacement> placements,
+        AreaPlacementControl control
+    ) {
+        interactionState = new AreaPlacementInteraction(
+            attacker,
+            placements,
+            control
+        );
+    }
+
+    public void handleBoardHover(HexPosition hoveredHex) {
+        if (interactionState instanceof AreaPlacementInteraction area) {
+            area.previewAt(hoveredHex);
+        }
+    }
+
+    public void rotateAreaPlacement() {
+        if (interactionState instanceof AreaPlacementInteraction area) {
+            area.rotate();
+        }
+    }
+
     public void finishInteraction() {
         interactionState = new IdleInteraction();
     }
@@ -110,6 +139,11 @@ public final class ScenarioInteractionController {
 
         if (pendingChoice instanceof PendingAttackChoice attack) {
             restoreAttackChoice(event, attack);
+            return;
+        }
+
+        if (pendingChoice instanceof PendingAreaAttackChoice area) {
+            restoreAreaChoice(event, area);
             return;
         }
 
@@ -150,6 +184,34 @@ public final class ScenarioInteractionController {
         return attack.getSelectedTargets().stream()
             .map(scenarioState::positionOf)
             .toList();
+    }
+
+    public Set<HexPosition> eligibleAreaAnchors() {
+        if (!(interactionState instanceof AreaPlacementInteraction area)) {
+            return Set.of();
+        }
+        return area.eligibleAnchors();
+    }
+
+    public Set<HexPosition> targetableAreaHexes() {
+        if (!(interactionState instanceof AreaPlacementInteraction area)) {
+            return Set.of();
+        }
+        return area.targetableHexes();
+    }
+
+    public Set<HexPosition> untargetableAreaHexes() {
+        if (!(interactionState instanceof AreaPlacementInteraction area)) {
+            return Set.of();
+        }
+        return area.untargetableHexes();
+    }
+
+    public Set<HexPosition> invalidAreaPreviewHexes() {
+        if (!(interactionState instanceof AreaPlacementInteraction area)) {
+            return Set.of();
+        }
+        return area.invalidPreviewHexes();
     }
 
     private void updateMovementPreview(
@@ -226,7 +288,7 @@ public final class ScenarioInteractionController {
         HexPosition clickedHex,
         AreaPlacementInteraction area
     ) {
-        throw new UnsupportedOperationException();
+        area.placeAt(clickedHex);
     }
 
     private void restoreMoveChoice(
@@ -261,6 +323,25 @@ public final class ScenarioInteractionController {
 
         if (event.undoneCommand() instanceof ChooseAttackTargetsCommand(List<FigureId> targets)) {
             restored.replaceSelectedTargets(targets);
+        }
+
+        interactionState = restored;
+    }
+
+    private void restoreAreaChoice(
+        UndoPerformedEvent event,
+        PendingAreaAttackChoice area
+    ) {
+        AreaPlacementInteraction restored =
+            new AreaPlacementInteraction(
+                area.attackerId(),
+                area.placements(),
+                area.control()
+            );
+
+        if (event.undoneCommand()
+            instanceof ChooseAttackAreaCommand areaCommand) {
+            restored.restorePlacement(areaCommand.placement());
         }
 
         interactionState = restored;

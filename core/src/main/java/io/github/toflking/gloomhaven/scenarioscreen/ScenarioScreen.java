@@ -109,7 +109,8 @@ public final class ScenarioScreen extends ScreenAdapter {
             boardRenderer,
             cameraController,
             interactionController::handleBoardLeftClick,
-            interactionController::handleBoardRightClick
+            interactionController::handleBoardRightClick,
+            interactionController::rotateAreaPlacement
         );
         inputMultiplexer = new InputMultiplexer(
             hud.stage(),
@@ -131,6 +132,9 @@ public final class ScenarioScreen extends ScreenAdapter {
 
         assetManager.update();
         inputController.update(delta);
+        interactionController.handleBoardHover(
+            inputController.hoveredHex()
+        );
 
         viewport.apply();
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
@@ -140,7 +144,11 @@ public final class ScenarioScreen extends ScreenAdapter {
             interactionController.selectedHex(),
             interactionController.movementPath(),
             interactionController.eligibleTargetHexes(),
-            interactionController.selectedTargetHexes()
+            interactionController.selectedTargetHexes(),
+            interactionController.eligibleAreaAnchors(),
+            interactionController.targetableAreaHexes(),
+            interactionController.untargetableAreaHexes(),
+            interactionController.invalidAreaPreviewHexes()
         );
         figureRenderer.render(scenarioState, camera);
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);

@@ -1,9 +1,8 @@
 package io.github.toflking.gloomhaven.rules.scenario.history;
 
 import io.github.toflking.gloomhaven.rules.execution.ActionExecution;
-import io.github.toflking.gloomhaven.rules.figure.Figure;
-import io.github.toflking.gloomhaven.rules.figure.FigureId;
-import io.github.toflking.gloomhaven.rules.figure.FigureType;
+import io.github.toflking.gloomhaven.rules.figure.*;
+import io.github.toflking.gloomhaven.rules.figure.identities.FigureIdentity;
 import io.github.toflking.gloomhaven.rules.board.HexPosition;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioPhase;
 
@@ -54,20 +53,28 @@ public record ScenarioSnapshot(
 
     public record FigureSnapshot(
         FigureId id,
-        FigureType type,
-        int maximumHealth,
-        int health
+        FigureDefinitionId definitionId,
+        FigureIdentity identity,
+        FigureOrigin origin,
+        FactionId factionId,
+        HealthState health,
+        ConditionState conditions
     ) {
 
         public FigureSnapshot {
             Objects.requireNonNull(id, "id");
-            Objects.requireNonNull(type, "type");
-            if (maximumHealth < 0) {
+            Objects.requireNonNull(definitionId, "definitionId");
+            Objects.requireNonNull(identity, "identity");
+            Objects.requireNonNull(origin, "origin");
+            Objects.requireNonNull(factionId, "factionId");
+            Objects.requireNonNull(health, "health");
+            Objects.requireNonNull(conditions, "conditions");
+            if (health.maximumHealth() <= 0) {
                 throw new IllegalArgumentException(
                     "Maximum health cannot be negative"
                 );
             }
-            if (health < 0 || health > maximumHealth) {
+            if (health.currentHealth() < 0 || health.currentHealth() > health.maximumHealth()) {
                 throw new IllegalArgumentException(
                     "Health must be within the figure health range"
                 );
@@ -77,14 +84,17 @@ public record ScenarioSnapshot(
         public static FigureSnapshot from(Figure figure) {
             return new FigureSnapshot(
                 figure.id(),
+                figure.definitionId(),
                 figure.type(),
-                figure.maximumHealth(),
-                figure.health()
+                figure.origin(),
+                figure.factionId(),
+                new HealthState(figure.health().maximumHealth(), figure.health().currentHealth()),
+                new ConditionState(figure.conditions().conditions())
             );
         }
 
         public Figure restore() {
-            return new Figure(id, type, maximumHealth, health);
+            return new Figure(id, definitionId, identity, origin, factionId, health, conditions);
         }
     }
 }

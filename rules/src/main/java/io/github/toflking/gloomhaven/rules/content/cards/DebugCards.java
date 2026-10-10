@@ -4,13 +4,19 @@ import io.github.toflking.gloomhaven.rules.ability.movement.MoveAbility;
 import io.github.toflking.gloomhaven.rules.ability.attack.AttackAbility;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AttackTargetPlan;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AttackTargetPlans;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AreaPlacementRule;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.Cardinality;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.FigurePredicate;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.FigureReference;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.LineOfSightPolicy;
 import io.github.toflking.gloomhaven.rules.ability.value.AbilityValue;
 import io.github.toflking.gloomhaven.rules.ability.value.IntExpression;
 import io.github.toflking.gloomhaven.rules.card.AbilityCardId;
 import io.github.toflking.gloomhaven.rules.card.CardAction;
 import io.github.toflking.gloomhaven.rules.card.CardDefinition;
 import io.github.toflking.gloomhaven.rules.ability.movement.MovementType;
+import io.github.toflking.gloomhaven.rules.board.HexPattern;
+import io.github.toflking.gloomhaven.rules.board.HexPosition;
 
 import java.util.List;
 
@@ -25,6 +31,10 @@ public final class DebugCards {
         new AbilityCardId("debug-attack-1-all-adjacent");
     public static final AbilityCardId MOVE_2_ATTACK_3 =
         new AbilityCardId("debug-move-2-attack-3");
+    public static final AbilityCardId ATTACK_2_AREA_RANGE_3 =
+        new AbilityCardId("debug-attack-2-area-range-3");
+    public static final AbilityCardId ATTACK_1_AREA_AROUND_ORIGIN =
+        new AbilityCardId("debug-attack-1-area-around-origin");
 
     public static List<CardDefinition> all() {
         return List.of(
@@ -79,6 +89,41 @@ public final class DebugCards {
                     )
                 )),
                 new CardAction(List.of())
+            ),
+            attackCard(
+                ATTACK_2_AREA_RANGE_3,
+                "Attack 2 Area Range 3",
+                2,
+                new AttackTargetPlan.Area(
+                    new HexPattern(List.of(
+                        new HexPosition(0, 0),
+                        new HexPosition(1, 0),
+                        new HexPosition(0, 1)
+                    )),
+                    new AreaPlacementRule.WithinRange(
+                        new IntExpression.Constant(3),
+                        LineOfSightPolicy.REQUIRED,
+                        true,
+                        true
+                    ),
+                    enemiesOfActor()
+                )
+            ),
+            attackCard(
+                ATTACK_1_AREA_AROUND_ORIGIN,
+                "Attack 1 Area Around Origin",
+                1,
+                new AttackTargetPlan.Area(
+                    new HexPattern(List.of(
+                        new HexPosition(1, 0),
+                        new HexPosition(0, 1)
+                    )),
+                    new AreaPlacementRule.AroundOrigin(
+                        true,
+                        false
+                    ),
+                    enemiesOfActor()
+                )
             )
         );
     }
@@ -117,6 +162,13 @@ public final class DebugCards {
                 )
             )),
             new CardAction(List.of())
+        );
+    }
+
+    private static FigurePredicate enemiesOfActor() {
+        return new FigurePredicate.Relationship(
+            new FigureReference.Actor(),
+            FigurePredicate.FigureRelation.ENEMY
         );
     }
 }

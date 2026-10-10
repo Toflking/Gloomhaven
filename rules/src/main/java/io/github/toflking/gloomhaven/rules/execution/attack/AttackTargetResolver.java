@@ -2,14 +2,20 @@ package io.github.toflking.gloomhaven.rules.execution.attack;
 
 import io.github.toflking.gloomhaven.rules.ability.attack.AttackOrigin;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.*;
+import io.github.toflking.gloomhaven.rules.board.HexPattern;
+import io.github.toflking.gloomhaven.rules.board.HexPosition;
+import io.github.toflking.gloomhaven.rules.board.LineOfSightResolver;
+import io.github.toflking.gloomhaven.rules.execution.ActionExecution;
 import io.github.toflking.gloomhaven.rules.figure.Figure;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
-import io.github.toflking.gloomhaven.rules.figure.FigureType;
-import io.github.toflking.gloomhaven.rules.board.HexPosition;
-import io.github.toflking.gloomhaven.rules.execution.ActionExecution;
+import io.github.toflking.gloomhaven.rules.figure.identities.*;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioState;
 
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -40,7 +46,20 @@ public final class AttackTargetResolver {
         );
     }
 
-    public ResolvedTargetSelection resolve(
+    public AttackChoice resolve(AttackTargetPlan plan) {
+        Objects.requireNonNull(plan, "plan");
+
+        return switch (plan) {
+            case AttackTargetPlan.Query query -> resolveQuery(query);
+            case AttackTargetPlan.Area area -> resolveArea(area);
+            case AttackTargetPlan.PrimaryAndDerived ignored ->
+                throw unsupported(plan);
+            case AttackTargetPlan.Chain ignored ->
+                throw unsupported(plan);
+        };
+    }
+
+    private AttackChoice.FigureTargets resolveQuery(
         AttackTargetPlan.Query plan
     ) {
         Set<FigureId> eligibleTargets = new LinkedHashSet<>();
@@ -48,6 +67,10 @@ public final class AttackTargetResolver {
         for (Figure figure : state.figures()) {
             HexPosition position = state.positionOf(figure.id());
             if (matchesRegion(plan.candidates().region(), position)
+                && matchesLineOfSight(
+                    plan.candidates().lineOfSight(),
+                    position
+                )
                 && matchesPredicate(
                     plan.candidates().figures(),
                     figure
@@ -90,12 +113,215 @@ public final class AttackTargetResolver {
             maximum = Math.min(maximum, eligibleTargets.size());
         }
 
-        return new ResolvedTargetSelection(
+        return new AttackChoice.FigureTargets(
             eligibleTargets,
             minimum,
             maximum,
             plan.duplicates(),
             selectionMode
+        );
+    }
+
+    private AttackChoice.AreaPlacement resolveArea(
+        AttackTargetPlan.Area plan
+    ) {
+        Map<AreaPlacementKey, ResolvedAreaPlacement> placements =
+            new LinkedHashMap<>();
+
+        int maximumRotations = plan.placement().allowRotation() ? 6 : 1;
+        int reflectionCount = plan.placement().allowReflection() ? 2 : 1;
+
+        for (HexPosition anchor : placementAnchors(plan.placement())) {
+            for (int reflection = 0;
+                 reflection < reflectionCount;
+                 reflection++) {
+                for (int rotation = 0;
+                     rotation < maximumRotations;
+                     rotation++) {
+                    boolean reflected = reflection == 1;
+                    Set<HexPosition> affectedHexes = placePattern(
+                        plan.pattern(),
+                        anchor,
+                        rotation,
+                        reflected
+                    );
+
+                    boolean allHexesOnBoard = affectedHexes.stream()
+                        .allMatch(state.board()::contains);
+                    boolean eligible = allHexesOnBoard
+                        && matchesPlacementRule(
+                            plan.placement(),
+                            affectedHexes
+                        )
+                        && containsEligibleAreaTarget(
+                            affectedHexes,
+                            plan
+                        );
+
+                    placements.putIfAbsent(
+                        new AreaPlacementKey(anchor, affectedHexes),
+                        new ResolvedAreaPlacement(
+                            new AttackChoice.AreaPlacementOption(
+                                anchor,
+                                rotation,
+                                reflected
+                            ),
+                            affectedHexes,
+                            targetableAreaHexes(plan, affectedHexes),
+                            eligible
+                        )
+                    );
+                }
+            }
+        }
+
+        return new AttackChoice.AreaPlacement(
+            List.copyOf(placements.values()),
+            plan.placement() instanceof AreaPlacementRule.AroundOrigin ? AreaPlacementControl.LOCKED_TO_ORIGIN : AreaPlacementControl.POINTER_CONTROLLED
+        );
+    }
+
+    private List<HexPosition> placementAnchors(
+        AreaPlacementRule placement
+    ) {
+        return switch (placement) {
+            case AreaPlacementRule.AroundOrigin ignored ->
+                List.of(attackOrigin);
+            case AreaPlacementRule.WithinRange ignored ->
+                state.board().positions()
+                    .stream()
+                    .sorted(Comparator
+                        .comparingInt(HexPosition::q)
+                        .thenComparingInt(HexPosition::r))
+                    .toList();
+        };
+    }
+
+    private boolean matchesPlacementRule(
+        AreaPlacementRule placement,
+        Set<HexPosition> affectedHexes
+    ) {
+        return switch (placement) {
+            case AreaPlacementRule.AroundOrigin ignored -> true;
+            case AreaPlacementRule.WithinRange within -> {
+                int range = requireNonNegative(
+                    within.range().evaluate(expressionContext),
+                    "Area placement range"
+                );
+                yield affectedHexes.stream()
+                    .anyMatch(position ->
+                        position.distanceTo(attackOrigin) <= range
+                            && matchesLineOfSight(
+                                within.lineOfSight(),
+                                position
+                            )
+                    );
+            }
+        };
+    }
+
+    private boolean containsEligibleAreaTarget(
+        Set<HexPosition> affectedHexes,
+        AttackTargetPlan.Area plan
+    ) {
+        return !resolveAreaTargets(plan, affectedHexes).isEmpty();
+    }
+
+    List<FigureId> resolveAreaTargets(
+        AttackTargetPlan.Area plan,
+        Set<HexPosition> affectedHexes
+    ) {
+        Objects.requireNonNull(plan, "plan");
+        Objects.requireNonNull(affectedHexes, "affectedHexes");
+
+        LineOfSightPolicy lineOfSight = areaLineOfSight(plan);
+
+        return affectedHexes.stream()
+            .sorted(Comparator
+                .comparingInt(HexPosition::q)
+                .thenComparingInt(HexPosition::r))
+            .map(state::figureAt)
+            .flatMap(java.util.Optional::stream)
+            .filter(figure -> matchesPredicate(plan.targets(), figure))
+            .filter(figure -> matchesLineOfSight(
+                lineOfSight,
+                state.positionOf(figure.id())
+            ))
+            .map(Figure::id)
+            .toList();
+    }
+
+    private Set<HexPosition> targetableAreaHexes(
+        AttackTargetPlan.Area plan,
+        Set<HexPosition> affectedHexes
+    ) {
+        LineOfSightPolicy lineOfSight = areaLineOfSight(plan);
+        return affectedHexes.stream()
+            .filter(state.board()::contains)
+            .filter(position -> matchesLineOfSight(
+                lineOfSight,
+                position
+            ))
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    private record AreaPlacementKey(
+        HexPosition anchor,
+        Set<HexPosition> affectedHexes
+    ) {
+    }
+
+    private static LineOfSightPolicy areaLineOfSight(
+        AttackTargetPlan.Area plan
+    ) {
+        return switch (plan.placement()) {
+            case AreaPlacementRule.AroundOrigin ignored ->
+                LineOfSightPolicy.REQUIRED;
+            case AreaPlacementRule.WithinRange within ->
+                within.lineOfSight();
+        };
+    }
+
+    private static Set<HexPosition> placePattern(
+        HexPattern pattern,
+        HexPosition anchor,
+        int clockwiseRotations,
+        boolean reflected
+    ) {
+        Set<HexPosition> result = new LinkedHashSet<>();
+        for (HexPosition tile : pattern.tiles()) {
+            HexPosition transformed = reflected ? reflect(tile) : tile;
+            for (int i = 0; i < clockwiseRotations; i++) {
+                transformed = rotateClockwise(transformed);
+            }
+            result.add(new HexPosition(
+                anchor.q() + transformed.q(),
+                anchor.r() + transformed.r()
+            ));
+        }
+        return Set.copyOf(result);
+    }
+
+    private static HexPosition rotateClockwise(HexPosition position) {
+        return new HexPosition(
+            -position.r(),
+            position.q() + position.r()
+        );
+    }
+
+    private static HexPosition reflect(HexPosition position) {
+        return new HexPosition(
+            position.q(),
+            -position.q() - position.r()
+        );
+    }
+
+    private static UnsupportedOperationException unsupported(
+        AttackTargetPlan plan
+    ) {
+        return new UnsupportedOperationException(
+            "Attack target plan is not supported yet: "
+                + plan.getClass().getSimpleName()
         );
     }
 
@@ -143,6 +369,18 @@ public final class AttackTargetResolver {
         };
     }
 
+    private boolean matchesLineOfSight(
+        LineOfSightPolicy policy,
+        HexPosition candidate
+    ) {
+        return policy == LineOfSightPolicy.IGNORED
+            || LineOfSightResolver.hasLineOfSight(
+                state.board(),
+                attackOrigin,
+                candidate
+            );
+    }
+
     private boolean matchesPredicate(
         FigurePredicate predicate,
         Figure candidate
@@ -151,11 +389,10 @@ public final class AttackTargetResolver {
             case FigurePredicate.Any ignored -> true;
             case FigurePredicate.Relationship relationship ->
                 matchesRelationship(relationship, candidate);
-            case FigurePredicate.Classification classification ->
-                matchesClassification(
-                    classification.classification(),
-                    candidate
-                );
+            case FigurePredicate.Kind kind ->
+                matchesKind(kind.identity(), candidate);
+            case FigurePredicate.Identity identity ->
+                matchesIdentity(identity.identity(), candidate);
             case FigurePredicate.HasCondition condition ->
                 throw new IllegalStateException(
                     "Condition targeting is not available on Figure yet: "
@@ -193,23 +430,48 @@ public final class AttackTargetResolver {
             case NOT_SELF -> !candidate.id().equals(referenceId);
             case ALLY ->
                 !candidate.id().equals(referenceId)
-                    && candidate.type() == reference.type();
-            case ENEMY -> candidate.type() != reference.type();
+                    && candidate.factionId().equals(reference.factionId());
+            case ENEMY ->
+                !candidate.factionId().equals(reference.factionId());
         };
     }
 
-    private boolean matchesClassification(
-        FigurePredicate.FigureClassification classification,
+    private boolean matchesKind(
+        FigureIdentity identity,
         Figure candidate
     ) {
-        return switch (classification) {
-            case CHARACTER -> candidate.type() == FigureType.CHARACTER;
-            case MONSTER -> candidate.type() == FigureType.MONSTER;
-            case NORMAL, ELITE, BOSS, SUMMON, FLYING ->
-                throw new IllegalStateException(
-                    "Figure classification is not available on Figure yet: "
-                        + classification
-                );
+        return switch (identity) {
+            case CharacterIdentity ignored -> candidate.type() instanceof CharacterIdentity;
+            case MonsterIdentity ignored -> candidate.type() instanceof MonsterIdentity;
+            case CharacterSummonIdentity ignored -> candidate.type() instanceof CharacterSummonIdentity;
+            case ObjectiveIdentity ignored -> candidate.type() instanceof ObjectiveIdentity;
+        };
+    }
+
+    private boolean matchesIdentity(
+        FigureIdentity identity,
+        Figure candidate
+    ) {
+        return switch (identity) {
+            case CharacterIdentity character -> {
+                if (!(candidate.type() instanceof CharacterIdentity characterCandidate)) {
+                    yield false;
+                }
+                yield characterCandidate.id().equals(character.id());
+            }
+            case MonsterIdentity monster -> {
+                if (!(candidate.type() instanceof MonsterIdentity monsterCandidate)) {
+                    yield false;
+                }
+                yield (monsterCandidate.monsterTypeId() == monster.monsterTypeId()) && (monsterCandidate.rank() == monster.rank());
+            }
+            case CharacterSummonIdentity summon -> {
+                if (!(candidate.type() instanceof CharacterSummonIdentity summonCandidate)) {
+                    yield false;
+                }
+                yield summonCandidate.definitionId() == summon.definitionId();
+            }
+            case ObjectiveIdentity ignored -> candidate.type() instanceof ObjectiveIdentity;
         };
     }
 

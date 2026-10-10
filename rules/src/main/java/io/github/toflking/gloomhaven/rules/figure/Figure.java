@@ -1,63 +1,68 @@
 package io.github.toflking.gloomhaven.rules.figure;
 
+import io.github.toflking.gloomhaven.rules.figure.identities.FigureIdentity;
+
 import java.util.Objects;
 
 public final class Figure {
-
     private final FigureId id;
-    private final FigureType type;
-    private final int maximumHealth;
+    private final FigureDefinitionId definitionId;
 
-    private int health;
+    private final FigureIdentity identity;
+    private final FigureOrigin origin;
+    private final FactionId factionId;
 
-    public Figure(
-        FigureId id,
-        FigureType type,
-        int maximumHealth
-    ) {
-        this(id, type, maximumHealth, maximumHealth);
-    }
+    private final HealthState health;
+    private final ConditionState conditions;
+
 
     public Figure(
         FigureId id,
-        FigureType type,
-        int maximumHealth,
-        int health
+        FigureDefinitionId definitionId,
+        FigureIdentity identity,
+        FigureOrigin origin,
+        FactionId factionId,
+        HealthState health, ConditionState conditions
     ) {
         this.id = Objects.requireNonNull(id, "id");
-        this.type = Objects.requireNonNull(type, "type");
-        if (maximumHealth < 0) {
-            throw new IllegalArgumentException(
-                "Maximum health cannot be negative"
-            );
-        }
-        if (health < 0 || health > maximumHealth) {
-            throw new IllegalArgumentException(
-                "Health must be within the figure health range"
-            );
-        }
-        this.maximumHealth = maximumHealth;
-        this.health = health;
+        this.definitionId = Objects.requireNonNull(definitionId, "definitionId");
+        this.identity = Objects.requireNonNull(identity, "identity");
+        this.origin = Objects.requireNonNull(origin, "origin");
+        this.factionId = Objects.requireNonNull(factionId, "factionId");
+        this.health = Objects.requireNonNull(health, "health");
+        this.conditions = Objects.requireNonNull(conditions, "conditions");
     }
 
     public FigureId id() {
         return id;
     }
 
-    public FigureType type() {
-        return type;
+    public FigureDefinitionId definitionId() {
+        return definitionId;
     }
 
-    public int health() {
+    public FigureIdentity type() {
+        return identity;
+    }
+
+    public FigureOrigin origin() {
+        return origin;
+    }
+
+    public FactionId factionId() {
+        return factionId;
+    }
+
+    public HealthState health() {
         return health;
     }
 
-    public int maximumHealth() {
-        return maximumHealth;
+    public ConditionState conditions() {
+        return conditions;
     }
 
     public boolean isDefeated() {
-        return health <= 0;
+        return health.currentHealth <= 0;
     }
 
     public void takeDamage(int amount) {
@@ -67,6 +72,6 @@ public final class Figure {
             );
         }
 
-        health = Math.max(0, health - amount);
+        health.setCurrentHealth(Math.max(0, health.currentHealth() - amount));
     }
 }

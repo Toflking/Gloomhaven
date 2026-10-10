@@ -34,6 +34,10 @@ public final class HexBoard {
         return tile;
     }
 
+    public Set<HexPosition> positions() {
+        return tiles.keySet();
+    }
+
     public boolean hasWallBetween(
         HexPosition current,
         HexPosition neighbor

@@ -3,8 +3,8 @@ package io.github.toflking.gloomhaven.rules.engine;
 import io.github.toflking.gloomhaven.rules.ability.Ability;
 import io.github.toflking.gloomhaven.rules.ability.attack.AttackAbility;
 import io.github.toflking.gloomhaven.rules.execution.attack.AttackExecutionState;
+import io.github.toflking.gloomhaven.rules.execution.attack.AttackChoice;
 import io.github.toflking.gloomhaven.rules.execution.attack.AttackInstance;
-import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AttackTargetPlan;
 import io.github.toflking.gloomhaven.rules.ability.movement.MoveAbility;
 import io.github.toflking.gloomhaven.rules.card.AbilitySource;
 import io.github.toflking.gloomhaven.rules.card.CardAction;
@@ -16,7 +16,7 @@ import io.github.toflking.gloomhaven.rules.execution.ValidationResult;
 import io.github.toflking.gloomhaven.rules.execution.attack.AttackExpressionContext;
 import io.github.toflking.gloomhaven.rules.execution.attack.AttackTargetResolver;
 import io.github.toflking.gloomhaven.rules.execution.attack.AttackTargetValidator;
-import io.github.toflking.gloomhaven.rules.execution.attack.ResolvedTargetSelection;
+import io.github.toflking.gloomhaven.rules.execution.choice.PendingAreaAttackChoice;
 import io.github.toflking.gloomhaven.rules.figure.Figure;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import io.github.toflking.gloomhaven.rules.board.HexPosition;
@@ -69,6 +69,9 @@ public final class ScenarioEngine {
                 executeMovePathSelection(move);
 
             case ChooseAttackTargetsCommand attack ->
+                executeAttack(attack);
+
+            case ChooseAttackAreaCommand attack ->
                 executeAttack(attack);
 
             case PlayCardActionCommand playCardAction ->
@@ -179,7 +182,7 @@ public final class ScenarioEngine {
     }
 
 
-    private CommandResult executeAttack(ChooseAttackTargetsCommand command) {
+    private CommandResult executeAttack(GameCommand command) {
         if (state.phase() != ScenarioPhase.TURN_EXECUTION) {
             return CommandResult.rejected(
                 "An attack can only happen during turn execution"
@@ -194,22 +197,31 @@ public final class ScenarioEngine {
             );
         }
 
-        if (!(execution.pendingChoice() instanceof PendingAttackChoice choice)) {
-            return CommandResult.rejected("There is no pending choice for this attack");
+        List<GameEvent> events = new ArrayList<>();
+        AttackTargetValidator attackTargetValidator = new AttackTargetValidator(state);
+        ValidationResult validationResult;
+        switch (execution.pendingChoice()) {
+            case PendingAttackChoice attackChoice -> {
+                if (!(command instanceof ChooseAttackTargetsCommand attackTargetsCommand)) return CommandResult.rejected("Expected an ChooseAttackTargetsCommand but received " + command.getClass().getName());
+                validationResult = attackTargetValidator.validateTargets(attackTargetsCommand.targets(), attackChoice);
+            }
+            case PendingAreaAttackChoice areaAttackChoice -> {
+                if (!(command instanceof ChooseAttackAreaCommand attackAreaCommand)) return CommandResult.rejected("Expected an ChooseAttackAreaCommand but received " + command.getClass().getName());
+                validationResult = attackTargetValidator.validateArea(attackAreaCommand.placement(), areaAttackChoice);
+            }
+            default -> {
+                return CommandResult.rejected("There is no pending choice for this attack");
+            }
         }
 
-        AttackTargetValidator attackTargetValidator = new AttackTargetValidator(state);
-        ValidationResult validation = attackTargetValidator.validate(command.targets(), choice);
-
-        if (!validation.isValid()) {
+        if (!validationResult.isValid()) {
             return CommandResult.rejected(
-                validation.rejectionReason()
+                validationResult.rejectionReason()
             );
         }
 
-        List<GameEvent> events = new ArrayList<>();
         execution.clearPendingChoice();
-        resolveAttackTargets(command.targets(), events);
+        resolveAttackTargets(validationResult.targets(), events);
 
         return CommandResult.accepted(events);
     }
@@ -280,37 +292,52 @@ public final class ScenarioEngine {
         ActionExecution execution = state.execution();
         execution.beginAttack(attack.effectiveDefinition());
 
-        if (!(attack.targeting() instanceof AttackTargetPlan.Query query)) {
-            throw new IllegalStateException(
-                "This attack target plan requires its dedicated choice flow: "
-                    + attack.targeting().getClass().getSimpleName()
-            );
-        }
-
         AttackTargetResolver resolver = new AttackTargetResolver(
             state,
             execution
         );
-        ResolvedTargetSelection selection = resolver.resolve(query);
+        AttackChoice resolvedChoice = resolver.resolve(attack.targeting());
 
-        PendingAttackChoice pendingChoice = new PendingAttackChoice(
-            execution.actor(),
-            selection.eligibleTargets(),
-            selection.minimumTargets(),
-            selection.maximumTargets(),
-            selection.duplicates(),
-            selection.selectionMode()
-        );
+        switch (resolvedChoice) {
+            case AttackChoice.FigureTargets figureTargets -> {
+                PendingAttackChoice pendingChoice = new PendingAttackChoice(
+                    execution.actor(),
+                    figureTargets.eligibleTargets(),
+                    figureTargets.minimumTargets(),
+                    figureTargets.maximumTargets(),
+                    figureTargets.duplicates(),
+                    figureTargets.selectionMode()
+                );
+                execution.setPendingChoice(pendingChoice);
+                events.add(new TargetChoiceRequestedEvent(
+                    pendingChoice.attackerId(),
+                    pendingChoice.eligibleTargets(),
+                    pendingChoice.minimumTargets(),
+                    pendingChoice.maximumTargets(),
+                    pendingChoice.duplicates(),
+                    pendingChoice.selectionMode()
+                ));
+            }
+            case AttackChoice.AreaPlacement areaPlacement -> {
+                PendingAreaAttackChoice pendingChoice = new PendingAreaAttackChoice(
+                    execution.actor(),
+                    areaPlacement.placements(),
+                    areaPlacement.control()
+                );
+                execution.setPendingChoice(pendingChoice);
+                events.add(new AreaPlacementRequestedEvent(
+                    pendingChoice.attackerId(),
+                    pendingChoice.placements(),
+                    pendingChoice.control()
+                ));
+            }
+            default -> throw new IllegalStateException(
+                "This resolved attack choice requires its dedicated choice flow: "
+                    + resolvedChoice.getClass().getSimpleName()
+            );
+        }
 
-        execution.setPendingChoice(pendingChoice);
-        events.add(new TargetChoiceRequestedEvent(
-            pendingChoice.attackerId(),
-            pendingChoice.eligibleTargets(),
-            pendingChoice.minimumTargets(),
-            pendingChoice.maximumTargets(),
-            pendingChoice.duplicates(),
-            pendingChoice.selectionMode()
-        ));
+
     }
 
     private void resolveAttackTargets(
@@ -340,17 +367,14 @@ public final class ScenarioEngine {
                     attackInstance.sequenceIndex()
                 );
 
-            int attackValue = Math.max(
-                0,
-                attackExecution.attack().amount().resolve(context)
-            );
+            int attackValue = Math.max(0, attackExecution.attack().amount().resolve(context));
 
             Figure target = state.figure(attackInstance.targetId());
             state.damageFigure(target.id(), attackValue);
 
             execution.markAbilityPerformed();
 
-            int remainingHealth = target.health();
+            int remainingHealth = target.health().currentHealth();
 
             events.add(new FigureDamagedEvent(
                 target.id(),

@@ -21,7 +21,6 @@ import io.github.toflking.gloomhaven.rules.event.MoveChoiceRequestedEvent;
 import io.github.toflking.gloomhaven.rules.event.UndoPerformedEvent;
 import io.github.toflking.gloomhaven.rules.figure.Figure;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
-import io.github.toflking.gloomhaven.rules.figure.FigureType;
 import io.github.toflking.gloomhaven.rules.board.HexBoard;
 import io.github.toflking.gloomhaven.rules.board.HexPosition;
 import io.github.toflking.gloomhaven.rules.board.HexTile;
@@ -42,6 +41,8 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static io.github.toflking.gloomhaven.rules.TestFigures.character;
+import static io.github.toflking.gloomhaven.rules.TestFigures.monster;
 
 class ScenarioEngineUndoTest {
     private static final FigureId PLAYER = new FigureId("player");
@@ -126,7 +127,7 @@ class ScenarioEngineUndoTest {
         engine.execute(new UndoCommand());
 
         assertTrue(state.hasFigure(MONSTER));
-        assertEquals(10, state.figure(MONSTER).health());
+        assertEquals(10, state.figure(MONSTER).health().currentHealth());
         assertEquals(MONSTER_HEX, state.positionOf(MONSTER));
         assertInstanceOf(
             PendingAttackChoice.class,
@@ -360,7 +361,7 @@ class ScenarioEngineUndoTest {
         state.execution().memory().putInteger(amount, 9);
         state.restore(snapshot);
 
-        assertEquals(10, state.figure(MONSTER).health());
+        assertEquals(10, state.figure(MONSTER).health().currentHealth());
         assertNotSame(originalFigure, state.figure(MONSTER));
         assertEquals(
             3,
@@ -391,11 +392,11 @@ class ScenarioEngineUndoTest {
             Set.of()
         ));
         state.addFigure(
-            new Figure(PLAYER, FigureType.CHARACTER, 10),
+            character(PLAYER, 10),
             START
         );
         state.addFigure(
-            new Figure(MONSTER, FigureType.MONSTER, 10),
+            monster(MONSTER, 10),
             MONSTER_HEX
         );
         state.setActiveFigure(PLAYER);

@@ -1,7 +1,10 @@
 package io.github.toflking.gloomhaven.rules.execution.attack;
 
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AttackTargetPlan;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.DuplicatePolicy;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetSelectionMode;
+import io.github.toflking.gloomhaven.rules.execution.ActionExecution;
+import io.github.toflking.gloomhaven.rules.execution.choice.PendingAreaAttackChoice;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import io.github.toflking.gloomhaven.rules.execution.choice.PendingAttackChoice;
 import io.github.toflking.gloomhaven.rules.execution.ValidationResult;
@@ -19,7 +22,7 @@ public final class AttackTargetValidator {
         this.state = Objects.requireNonNull(state, "state");
     }
 
-    public ValidationResult validate(List<FigureId> targets, PendingAttackChoice choice) {
+    public ValidationResult validateTargets(List<FigureId> targets, PendingAttackChoice choice) {
         Objects.requireNonNull(targets, "targets");
         Objects.requireNonNull(choice, "choice");
 
@@ -65,6 +68,63 @@ public final class AttackTargetValidator {
             }
         }
 
-        return ValidationResult.valid();
+        return ValidationResult.valid(targets);
+    }
+
+    public ValidationResult validateArea(
+        AttackChoice.AreaPlacementOption placement,
+        PendingAreaAttackChoice choice
+    ) {
+        Objects.requireNonNull(placement, "placement");
+        Objects.requireNonNull(choice, "choice");
+
+        ResolvedAreaPlacement resolvedPlacement = choice
+            .placements()
+            .stream()
+            .filter(candidate -> candidate.option().equals(placement))
+            .findFirst()
+            .orElse(null);
+
+        if (resolvedPlacement == null) {
+            return ValidationResult.invalid(
+                "Selected area is not an eligible attack placement"
+            );
+        }
+        if (!resolvedPlacement.eligible()) {
+            return ValidationResult.invalid(
+                "Selected area is not an eligible attack placement"
+            );
+        }
+
+        ActionExecution execution = state.execution();
+        if (execution == null) {
+            return ValidationResult.invalid(
+                "There is no active action execution"
+            );
+        }
+        if (!execution.actor().equals(choice.attackerId())) {
+            return ValidationResult.invalid(
+                "The pending area attack belongs to another figure"
+            );
+        }
+        if (!(execution.attackExecution().attack().targeting()
+            instanceof AttackTargetPlan.Area areaPlan)) {
+            return ValidationResult.invalid(
+                "The active attack does not use area targeting"
+            );
+        }
+
+        List<FigureId> targets = new AttackTargetResolver(
+            state,
+            execution
+        ).resolveAreaTargets(areaPlan, resolvedPlacement.affectedHexes());
+
+        if (targets.isEmpty()) {
+            return ValidationResult.invalid(
+                "The selected area no longer contains an eligible target"
+            );
+        }
+
+        return ValidationResult.valid(targets);
     }
 }

@@ -7,9 +7,7 @@ import io.github.toflking.gloomhaven.rules.board.HexTile;
 import io.github.toflking.gloomhaven.rules.board.TerrainType;
 import io.github.toflking.gloomhaven.rules.execution.ValidationResult;
 import io.github.toflking.gloomhaven.rules.execution.choice.PendingMoveChoice;
-import io.github.toflking.gloomhaven.rules.figure.Figure;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
-import io.github.toflking.gloomhaven.rules.figure.FigureType;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioState;
 import org.junit.jupiter.api.Test;
 
@@ -19,6 +17,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static io.github.toflking.gloomhaven.rules.TestFigures.character;
 
 class MovePathValidatorTest {
     private static final FigureId FIGURE_ID =
@@ -58,7 +57,7 @@ class MovePathValidatorTest {
             Set.of()
         ));
         state.addFigure(
-            new Figure(FIGURE_ID, FigureType.CHARACTER, 10),
+            character(FIGURE_ID, 10),
             START
         );
         return state;

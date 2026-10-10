@@ -17,6 +17,7 @@ public final class ScenarioInputController extends InputAdapter {
     private final OrbitCameraController cameraController;
     private final Consumer<HexPosition> boardLeftClickHandler;
     private final Consumer<HexPosition> boardRightClickHandler;
+    private final Runnable areaRotationHandler;
     private final IntSet pressedKeys = new IntSet();
 
     private HexPosition hoveredHex;
@@ -26,12 +27,15 @@ public final class ScenarioInputController extends InputAdapter {
         HexBoardRenderer boardRenderer,
         OrbitCameraController cameraController,
         Consumer<HexPosition> boardLeftClickHandler,
-        Consumer<HexPosition> boardRightClickHandler
+        Consumer<HexPosition> boardRightClickHandler,
+        Runnable areaRotationHandler
     ) {
         if (worldViewport == null
             || boardRenderer == null
             || cameraController == null
-            || boardLeftClickHandler == null) {
+            || boardLeftClickHandler == null
+            || boardRightClickHandler == null
+            || areaRotationHandler == null) {
 
             throw new IllegalArgumentException(
                 "Input controller dependencies cannot be null"
@@ -43,6 +47,7 @@ public final class ScenarioInputController extends InputAdapter {
         this.cameraController = cameraController;
         this.boardLeftClickHandler = boardLeftClickHandler;
         this.boardRightClickHandler = boardRightClickHandler;
+        this.areaRotationHandler = areaRotationHandler;
     }
 
     public void update(float delta) {
@@ -65,6 +70,10 @@ public final class ScenarioInputController extends InputAdapter {
 
     @Override
     public boolean keyDown(int keycode) {
+        if (keycode == Input.Keys.R) {
+            areaRotationHandler.run();
+            return true;
+        }
         if (!isCameraKey(keycode)) {
             return false;
         }

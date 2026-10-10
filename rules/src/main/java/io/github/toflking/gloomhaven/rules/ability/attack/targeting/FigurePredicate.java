@@ -1,12 +1,15 @@
 package io.github.toflking.gloomhaven.rules.ability.attack.targeting;
 
+import io.github.toflking.gloomhaven.rules.figure.identities.FigureIdentity;
+
 import java.util.List;
 import java.util.Objects;
 
 public sealed interface FigurePredicate
     permits FigurePredicate.Any,
     FigurePredicate.Relationship,
-    FigurePredicate.Classification,
+    FigurePredicate.Kind,
+    FigurePredicate.Identity,
     FigurePredicate.HasCondition,
     FigurePredicate.Contextual,
     FigurePredicate.And,
@@ -27,11 +30,19 @@ public sealed interface FigurePredicate
         }
     }
 
-    record Classification(FigureClassification classification)
+    record Kind(FigureIdentity identity)
         implements FigurePredicate {
 
-        public Classification {
-            Objects.requireNonNull(classification, "classification");
+        public Kind {
+            Objects.requireNonNull(identity, "identity");
+        }
+    }
+
+    record Identity(FigureIdentity identity)
+        implements FigurePredicate {
+
+        public Identity {
+            Objects.requireNonNull(identity, "identity");
         }
     }
 
@@ -80,16 +91,6 @@ public sealed interface FigurePredicate
         ENEMY,
         SELF,
         NOT_SELF
-    }
-
-    enum FigureClassification {
-        CHARACTER,
-        MONSTER,
-        NORMAL,
-        ELITE,
-        BOSS,
-        SUMMON,
-        FLYING
     }
 
     record ConditionId(String value) {

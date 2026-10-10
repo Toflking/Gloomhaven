@@ -1,6 +1,8 @@
 package io.github.toflking.gloomhaven.scenarioscreen.rendering.board;
 
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Intersector;
 import com.badlogic.gdx.math.MathUtils;
@@ -17,6 +19,14 @@ import java.util.Collection;
 public final class HexBoardRenderer implements Disposable {
     private static final Color MOVEMENT_PATH_COLOR =
         new Color(0.15f, 0.55f, 0.85f, 1f);
+    private static final Color AREA_TARGETABLE_COLOR =
+        new Color(0.85f, 0.28f, 0.12f, 1f);
+    private static final Color AREA_UNTARGETABLE_COLOR =
+        new Color(0.42f, 0.18f, 0.48f, 1f);
+    private static final Color AREA_ANCHOR_COLOR =
+        new Color(0.15f, 0.85f, 0.85f, 1f);
+    private static final Color AREA_INVALID_PREVIEW_COLOR =
+        new Color(0.52f, 0.39f, 0.34f, 1f);
 
     private final float hexSize;
     private final int boardRadius;
@@ -75,7 +85,11 @@ public final class HexBoardRenderer implements Disposable {
         HexPosition selectedHex,
         Collection<HexPosition> movementPath,
         Collection<HexPosition> eligibleTargets,
-        Collection<HexPosition> selectedTargets
+        Collection<HexPosition> selectedTargets,
+        Collection<HexPosition> eligibleAreaAnchors,
+        Collection<HexPosition> targetableAreaHexes,
+        Collection<HexPosition> untargetableAreaHexes,
+        Collection<HexPosition> invalidAreaPreviewHexes
     ) {
         shapeRenderer.setProjectionMatrix(projection);
         shapeRenderer.setTransformMatrix(boardTransform);
@@ -84,18 +98,29 @@ public final class HexBoardRenderer implements Disposable {
             hoveredHex,
             selectedHex,
             movementPath,
-            selectedTargets
+            selectedTargets,
+            targetableAreaHexes,
+            untargetableAreaHexes,
+            invalidAreaPreviewHexes
         );
+        Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);
+        Gdx.gl.glLineWidth(2f);
         drawOutlines(
-            eligibleTargets
+            eligibleTargets,
+            eligibleAreaAnchors
         );
+        Gdx.gl.glLineWidth(1f);
+        Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
     }
 
     private void drawFilledHexes(
         HexPosition hoveredHex,
         HexPosition selectedHex,
         Collection<HexPosition> movementPath,
-        Collection<HexPosition> selectedTargets
+        Collection<HexPosition> selectedTargets,
+        Collection<HexPosition> targetableAreaHexes,
+        Collection<HexPosition> untargetableAreaHexes,
+        Collection<HexPosition> invalidAreaPreviewHexes
     ) {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
@@ -108,6 +133,12 @@ public final class HexBoardRenderer implements Disposable {
                 shapeRenderer.setColor(MOVEMENT_PATH_COLOR);
             } else if (selectedTargets.contains(position)) {
                 shapeRenderer.setColor(Color.RED);
+            } else if (targetableAreaHexes.contains(position)) {
+                shapeRenderer.setColor(AREA_TARGETABLE_COLOR);
+            } else if (untargetableAreaHexes.contains(position)) {
+                shapeRenderer.setColor(AREA_UNTARGETABLE_COLOR);
+            } else if (invalidAreaPreviewHexes.contains(position)) {
+                shapeRenderer.setColor(AREA_INVALID_PREVIEW_COLOR);
             } else if (position.equals(hoveredHex)) {
                 shapeRenderer.setColor(Color.LIGHT_GRAY);
             } else {
@@ -125,12 +156,19 @@ public final class HexBoardRenderer implements Disposable {
         shapeRenderer.end();
     }
 
-    private void drawOutlines(Collection<HexPosition> eligibleTargets) {
+    private void drawOutlines(
+        Collection<HexPosition> eligibleTargets,
+        Collection<HexPosition> eligibleAreaAnchors
+    ) {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
 
         forEachHex((q, r) -> {
             if (eligibleTargets.contains(new HexPosition(q, r))) {
                 shapeRenderer.setColor(Color.RED);
+            } else if (eligibleAreaAnchors.contains(
+                new HexPosition(q, r)
+            )) {
+                shapeRenderer.setColor(AREA_ANCHOR_COLOR);
             } else {
                 shapeRenderer.setColor(Color.BLACK);
             }

@@ -2,6 +2,7 @@ package io.github.toflking.gloomhaven.rules.execution.attack;
 
 import io.github.toflking.gloomhaven.rules.ability.attack.AttackOrigin;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.DuplicatePolicy;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetSelectionMode;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import io.github.toflking.gloomhaven.rules.board.HexPosition;
 
@@ -20,22 +21,26 @@ public sealed interface AttackChoice
         Set<FigureId> eligibleTargets,
         int minimumTargets,
         int maximumTargets,
-        DuplicatePolicy duplicates
+        DuplicatePolicy duplicates,
+        TargetSelectionMode selectionMode
     ) implements AttackChoice {
 
         public FigureTargets {
             eligibleTargets = Set.copyOf(eligibleTargets);
             Objects.requireNonNull(duplicates, "duplicates");
+            Objects.requireNonNull(selectionMode, "selectionMode");
             requireCardinality(minimumTargets, maximumTargets);
         }
     }
 
     record AreaPlacement(
-        Set<AreaPlacementOption> eligiblePlacements
+        List<ResolvedAreaPlacement> placements,
+        AreaPlacementControl control
     ) implements AttackChoice {
 
         public AreaPlacement {
-            eligiblePlacements = Set.copyOf(eligiblePlacements);
+            placements = List.copyOf(placements);
+            Objects.requireNonNull(control, "control");
         }
     }
 

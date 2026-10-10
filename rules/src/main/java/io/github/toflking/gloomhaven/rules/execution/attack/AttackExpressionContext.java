@@ -52,10 +52,10 @@ public final class AttackExpressionContext
     ) {
         Figure figure = state.figure(resolveFigure(reference));
         return switch (stat) {
-            case CURRENT_HEALTH -> figure.health();
-            case MAXIMUM_HEALTH -> figure.maximumHealth();
+            case CURRENT_HEALTH -> figure.health().currentHealth();
+            case MAXIMUM_HEALTH -> figure.health().maximumHealth();
             case MISSING_HEALTH ->
-                figure.maximumHealth() - figure.health();
+                figure.health().maximumHealth() - figure.health().currentHealth();
         };
     }
 

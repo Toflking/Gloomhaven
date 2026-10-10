@@ -123,7 +123,7 @@ public final class FigureHealthBarRenderer implements Disposable {
         }
 
         float healthRatio = MathUtils.clamp(
-            (float) figure.health() / figure.maximumHealth(),
+            (float) figure.health().currentHealth() / figure.health().maximumHealth(),
             0f,
             1f
         );
@@ -170,7 +170,7 @@ public final class FigureHealthBarRenderer implements Disposable {
             return;
         }
 
-        String healthText = Integer.toString(figure.health());
+        String healthText = Integer.toString(figure.health().currentHealth());
         glyphLayout.setText(font, healthText);
 
         float barLeft = screenPosition.x - BAR_WIDTH * 0.5f;

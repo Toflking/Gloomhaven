@@ -8,7 +8,6 @@ import io.github.toflking.gloomhaven.rules.board.HexTile;
 import io.github.toflking.gloomhaven.rules.board.TerrainType;
 import io.github.toflking.gloomhaven.rules.figure.Figure;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
-import io.github.toflking.gloomhaven.rules.figure.FigureType;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -18,13 +17,12 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static io.github.toflking.gloomhaven.rules.TestFigures.character;
+import static io.github.toflking.gloomhaven.rules.TestFigures.monster;
 
 class HexPathfinderTest {
-    private static final Figure MOVING_FIGURE = new Figure(
-        new FigureId("moving-figure"),
-        FigureType.CHARACTER,
-        10
-    );
+    private static final Figure MOVING_FIGURE =
+        character(new FigureId("moving-figure"), 10);
 
     @Test
     void findsShortestPathAcrossBoard() {
@@ -351,11 +349,7 @@ class HexPathfinderTest {
             enemyPosition, tile(TerrainType.NORMAL),
             destination, tile(TerrainType.NORMAL)
         ), Set.of());
-        Figure enemy = new Figure(
-            new FigureId("enemy"),
-            FigureType.MONSTER,
-            10
-        );
+        Figure enemy = monster(new FigureId("enemy"), 10);
         Map<HexPosition, Figure> figures =
             Map.of(enemyPosition, enemy);
 

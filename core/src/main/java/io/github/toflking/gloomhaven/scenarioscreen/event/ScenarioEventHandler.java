@@ -46,6 +46,13 @@ public final class ScenarioEventHandler {
                     event.duplicates(),
                     event.selectionMode()
                 );
+            case AreaPlacementRequestedEvent event -> {
+                interactionController.beginAreaPlacementChoice(
+                    event.attackerId(),
+                    event.placements(),
+                    event.control()
+                );
+            }
             case UndoPerformedEvent event ->
                 interactionController.restoreAfterUndo(event);
             case ActionFinishedEvent ignored ->
