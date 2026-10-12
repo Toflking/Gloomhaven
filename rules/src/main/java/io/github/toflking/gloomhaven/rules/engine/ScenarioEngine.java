@@ -2,9 +2,9 @@ package io.github.toflking.gloomhaven.rules.engine;
 
 import io.github.toflking.gloomhaven.rules.ability.Ability;
 import io.github.toflking.gloomhaven.rules.ability.attack.AttackAbility;
-import io.github.toflking.gloomhaven.rules.execution.attack.AttackExecutionState;
-import io.github.toflking.gloomhaven.rules.execution.attack.AttackChoice;
-import io.github.toflking.gloomhaven.rules.execution.attack.AttackInstance;
+import io.github.toflking.gloomhaven.rules.ability.heal.HealAbility;
+import io.github.toflking.gloomhaven.rules.conditions.Conditions;
+import io.github.toflking.gloomhaven.rules.execution.attack.*;
 import io.github.toflking.gloomhaven.rules.ability.movement.MoveAbility;
 import io.github.toflking.gloomhaven.rules.card.AbilitySource;
 import io.github.toflking.gloomhaven.rules.card.CardAction;
@@ -12,17 +12,16 @@ import io.github.toflking.gloomhaven.rules.content.cards.CardCatalog;
 import io.github.toflking.gloomhaven.rules.command.*;
 import io.github.toflking.gloomhaven.rules.event.*;
 import io.github.toflking.gloomhaven.rules.execution.ActionExecution;
+import io.github.toflking.gloomhaven.rules.execution.AbilityExpressionContext;
 import io.github.toflking.gloomhaven.rules.execution.ValidationResult;
-import io.github.toflking.gloomhaven.rules.execution.attack.AttackExpressionContext;
-import io.github.toflking.gloomhaven.rules.execution.attack.AttackTargetResolver;
-import io.github.toflking.gloomhaven.rules.execution.attack.AttackTargetValidator;
-import io.github.toflking.gloomhaven.rules.execution.choice.PendingAreaAttackChoice;
+import io.github.toflking.gloomhaven.rules.execution.choice.PendingAreaChoice;
 import io.github.toflking.gloomhaven.rules.figure.Figure;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import io.github.toflking.gloomhaven.rules.board.HexPosition;
-import io.github.toflking.gloomhaven.rules.execution.choice.PendingAttackChoice;
+import io.github.toflking.gloomhaven.rules.execution.choice.PendingFigureTargetChoice;
 import io.github.toflking.gloomhaven.rules.execution.choice.PendingMoveChoice;
 import io.github.toflking.gloomhaven.rules.execution.movement.MovePathValidator;
+import io.github.toflking.gloomhaven.rules.execution.heal.HealExecutionState;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioPhase;
 import io.github.toflking.gloomhaven.rules.scenario.history.CommandHistory;
 import io.github.toflking.gloomhaven.rules.scenario.history.ScenarioSnapshot;
@@ -68,11 +67,11 @@ public final class ScenarioEngine {
             case ChooseMovePathCommand move ->
                 executeMovePathSelection(move);
 
-            case ChooseAttackTargetsCommand attack ->
-                executeAttack(attack);
+            case ChooseFigureTargetsCommand selection ->
+                executeFigureTargetSelection(selection);
 
             case ChooseAttackAreaCommand attack ->
-                executeAttack(attack);
+                executeAreaSelection(attack);
 
             case PlayCardActionCommand playCardAction ->
                 executePlayCardAction(playCardAction);
@@ -182,7 +181,53 @@ public final class ScenarioEngine {
     }
 
 
-    private CommandResult executeAttack(GameCommand command) {
+    private CommandResult executeFigureTargetSelection(ChooseFigureTargetsCommand command) {
+        if (state.phase() != ScenarioPhase.TURN_EXECUTION) {
+            return CommandResult.rejected(
+                "A target selection can only happen during turn execution"
+            );
+        }
+
+        ActionExecution execution = state.execution();
+
+        if (execution == null) {
+            return CommandResult.rejected(
+                "There is no active action execution"
+            );
+        }
+
+        List<GameEvent> events = new ArrayList<>();
+        TargetValidator targetValidator = new TargetValidator(state);
+        ValidationResult validationResult;
+
+        if (!(execution.pendingChoice() instanceof PendingFigureTargetChoice choice)) {
+            return CommandResult.rejected("There is no pending figure target selection for this command");
+        }
+
+        validationResult = targetValidator.validateTargets(command.targets(), choice);
+
+        if (!validationResult.isValid()) {
+            return CommandResult.rejected(
+                validationResult.rejectionReason()
+            );
+        }
+
+        execution.clearPendingChoice();
+
+        switch (choice) {
+            case PendingFigureTargetChoice.Attack ignored ->
+                resolveAttackTargets(validationResult.targets(), events);
+            case PendingFigureTargetChoice.Heal ignored ->
+                resolveHealTargets(validationResult.targets(), events);
+            default -> {
+                return CommandResult.rejected("There is no pending figure target choice");
+            }
+        }
+
+        return CommandResult.accepted(events);
+    }
+
+    private CommandResult executeAreaSelection(ChooseAttackAreaCommand command) {
         if (state.phase() != ScenarioPhase.TURN_EXECUTION) {
             return CommandResult.rejected(
                 "An attack can only happen during turn execution"
@@ -197,22 +242,15 @@ public final class ScenarioEngine {
             );
         }
 
-        List<GameEvent> events = new ArrayList<>();
-        AttackTargetValidator attackTargetValidator = new AttackTargetValidator(state);
-        ValidationResult validationResult;
-        switch (execution.pendingChoice()) {
-            case PendingAttackChoice attackChoice -> {
-                if (!(command instanceof ChooseAttackTargetsCommand attackTargetsCommand)) return CommandResult.rejected("Expected an ChooseAttackTargetsCommand but received " + command.getClass().getName());
-                validationResult = attackTargetValidator.validateTargets(attackTargetsCommand.targets(), attackChoice);
-            }
-            case PendingAreaAttackChoice areaAttackChoice -> {
-                if (!(command instanceof ChooseAttackAreaCommand attackAreaCommand)) return CommandResult.rejected("Expected an ChooseAttackAreaCommand but received " + command.getClass().getName());
-                validationResult = attackTargetValidator.validateArea(attackAreaCommand.placement(), areaAttackChoice);
-            }
-            default -> {
-                return CommandResult.rejected("There is no pending choice for this attack");
-            }
+        if (!(execution.pendingChoice() instanceof PendingAreaChoice choice)) {
+            return CommandResult.rejected("There is no attack area selection pending choice for this command");
         }
+
+        List<GameEvent> events = new ArrayList<>();
+        TargetValidator targetValidator = new TargetValidator(state);
+        ValidationResult validationResult;
+
+        validationResult = targetValidator.validateArea(command.placement(), choice);
 
         if (!validationResult.isValid()) {
             return CommandResult.rejected(
@@ -221,7 +259,16 @@ public final class ScenarioEngine {
         }
 
         execution.clearPendingChoice();
-        resolveAttackTargets(validationResult.targets(), events);
+
+        switch (choice) {
+            case PendingAreaChoice.Attack ignored ->
+                resolveAttackTargets(validationResult.targets(), events);
+            case PendingAreaChoice.Heal ignored ->
+                resolveHealTargets(validationResult.targets(), events);
+            default -> {
+                return CommandResult.rejected("There is no pending figure target choice");
+            }
+        }
 
         return CommandResult.accepted(events);
     }
@@ -265,6 +312,7 @@ public final class ScenarioEngine {
         switch (currentAbility) {
             case MoveAbility move -> beginMove(move, events);
             case AttackAbility attack -> beginAttack(attack, events);
+            case HealAbility heal -> beginHeal(heal, events);
             default -> throw new IllegalStateException(
                 "No executor is registered for ability type: "
                     + currentAbility.getClass().getName()
@@ -290,45 +338,43 @@ public final class ScenarioEngine {
 
     private void beginAttack(AttackAbility attack, List<GameEvent> events) {
         ActionExecution execution = state.execution();
-        execution.beginAttack(attack.effectiveDefinition());
-
-        AttackTargetResolver resolver = new AttackTargetResolver(
-            state,
-            execution
+        execution.beginAttack(
+            attack.effectiveDefinition(),
+            AbilityExpressionContext.withoutTarget(
+                state,
+                execution.frame(),
+                execution.memory()
+            )
         );
-        AttackChoice resolvedChoice = resolver.resolve(attack.targeting());
 
-        switch (resolvedChoice) {
-            case AttackChoice.FigureTargets figureTargets -> {
-                PendingAttackChoice pendingChoice = new PendingAttackChoice(
+        TargetResolver resolver = new TargetResolver(state, execution);
+        ResolvedAttackChoice resolvedChoice = resolver.resolveAttack(attack.targeting());
+
+        switch (resolvedChoice.selection()) {
+            case FigureTargetSelection.FigureTargets figureTargets -> {
+                PendingFigureTargetChoice.Attack pendingChoice = new PendingFigureTargetChoice.Attack(
                     execution.actor(),
-                    figureTargets.eligibleTargets(),
-                    figureTargets.minimumTargets(),
-                    figureTargets.maximumTargets(),
-                    figureTargets.duplicates(),
-                    figureTargets.selectionMode()
+                    figureTargets,
+                    resolvedChoice.previews()
                 );
                 execution.setPendingChoice(pendingChoice);
-                events.add(new TargetChoiceRequestedEvent(
-                    pendingChoice.attackerId(),
-                    pendingChoice.eligibleTargets(),
-                    pendingChoice.minimumTargets(),
-                    pendingChoice.maximumTargets(),
-                    pendingChoice.duplicates(),
-                    pendingChoice.selectionMode()
+                events.add(new AttackTargetChoiceRequestedEvent(
+                    pendingChoice.actorId(),
+                    pendingChoice.selection(),
+                    pendingChoice.previews()
                 ));
             }
-            case AttackChoice.AreaPlacement areaPlacement -> {
-                PendingAreaAttackChoice pendingChoice = new PendingAreaAttackChoice(
+            case FigureTargetSelection.AreaPlacement areaPlacement -> {
+                PendingAreaChoice.Attack pendingChoice = new PendingAreaChoice.Attack(
                     execution.actor(),
-                    areaPlacement.placements(),
-                    areaPlacement.control()
+                    areaPlacement,
+                    resolvedChoice.previews()
                 );
                 execution.setPendingChoice(pendingChoice);
-                events.add(new AreaPlacementRequestedEvent(
-                    pendingChoice.attackerId(),
-                    pendingChoice.placements(),
-                    pendingChoice.control()
+                events.add(new AttackAreaPlacementRequestedEvent(
+                    pendingChoice.actorId(),
+                    pendingChoice.selection(),
+                    pendingChoice.previews()
                 ));
             }
             default -> throw new IllegalStateException(
@@ -336,8 +382,55 @@ public final class ScenarioEngine {
                     + resolvedChoice.getClass().getSimpleName()
             );
         }
+    }
 
+    private void beginHeal(HealAbility heal, List<GameEvent> events) {
+        ActionExecution execution = state.execution();
+        execution.beginHeal(
+            heal.effectiveDefinition(),
+            AbilityExpressionContext.withoutTarget(
+                state,
+                execution.frame(),
+                execution.memory()
+            )
+        );
 
+        TargetResolver resolver = new TargetResolver(
+            state,
+            execution,
+            execution.healExecution().heal().origin()
+        );
+        ResolvedHealChoice resolvedChoice = resolver.resolveHeal(heal.targeting());
+
+        switch (resolvedChoice.selection()) {
+            case FigureTargetSelection.FigureTargets figureTargets -> {
+                PendingFigureTargetChoice.Heal pendingChoice = new PendingFigureTargetChoice.Heal(
+                    execution.actor(),
+                    figureTargets,
+                    resolvedChoice.previews()
+                );
+                execution.setPendingChoice(pendingChoice);
+                events.add(new HealTargetChoiceRequestedEvent(
+                    pendingChoice.actorId(),
+                    pendingChoice.selection(),
+                    pendingChoice.previews()
+                ));
+            }
+            case FigureTargetSelection.AreaPlacement areaPlacement -> {
+                PendingAreaChoice.Heal pendingChoice = new PendingAreaChoice.Heal(
+                    execution.actor(),
+                    areaPlacement,
+                    resolvedChoice.previews()
+                );
+                execution.setPendingChoice(pendingChoice);
+                events.add(new HealAreaPlacementRequestedEvent(
+                    pendingChoice.actorId(),
+                    pendingChoice.selection(),
+                    pendingChoice.previews()
+                ));
+            }
+            default -> throw new UnsupportedOperationException(resolvedChoice.selection().toString());
+        }
     }
 
     private void resolveAttackTargets(
@@ -347,7 +440,14 @@ public final class ScenarioEngine {
         ActionExecution execution = state.execution();
         AttackExecutionState attackExecution =
             execution.attackExecution();
-        attackExecution.setTargets(targets);
+        attackExecution.setTargets(
+            targets,
+            AbilityExpressionContext.withoutTarget(
+                state,
+                execution.frame(),
+                execution.memory()
+            )
+        );
 
         while (!attackExecution.isFinished()) {
             AttackInstance attackInstance =
@@ -358,8 +458,8 @@ public final class ScenarioEngine {
                 continue;
             }
 
-            AttackExpressionContext context =
-                new AttackExpressionContext(
+            AbilityExpressionContext context =
+                AbilityExpressionContext.forTarget(
                     state,
                     execution.frame(),
                     execution.memory(),
@@ -367,10 +467,15 @@ public final class ScenarioEngine {
                     attackInstance.sequenceIndex()
                 );
 
-            int attackValue = Math.max(0, attackExecution.attack().amount().resolve(context));
+            int attackValue =
+                attackExecution.amountForCurrentAttack(context);
 
             Figure target = state.figure(attackInstance.targetId());
-            state.damageFigure(target.id(), attackValue);
+            int damage = attackValue
+                + (target.conditions().contains(Conditions.POISON.id())
+                    ? 1
+                    : 0);
+            state.damageFigure(target.id(), damage);
 
             execution.markAbilityPerformed();
 
@@ -378,7 +483,7 @@ public final class ScenarioEngine {
 
             events.add(new FigureDamagedEvent(
                 target.id(),
-                attackValue,
+                damage,
                 remainingHealth,
                 execution.actor()
             ));
@@ -393,6 +498,54 @@ public final class ScenarioEngine {
             }
 
             attackExecution.completeCurrentAttack();
+        }
+
+        execution.completeCurrentAbility();
+        continueExecution(events);
+    }
+
+    private void resolveHealTargets(
+        List<FigureId> targets,
+        List<GameEvent> events
+    ) {
+        ActionExecution execution = state.execution();
+        HealExecutionState healExecution = execution.healExecution();
+        healExecution.setTargets(
+            targets,
+            AbilityExpressionContext.withoutTarget(
+                state,
+                execution.frame(),
+                execution.memory()
+            )
+        );
+
+        while (!healExecution.isFinished()) {
+            FigureId figureId = healExecution.currentTarget();
+            if (!state.hasFigure(figureId)) {
+                healExecution.completeCurrentTarget();
+                continue;
+            }
+
+            AbilityExpressionContext context =
+                AbilityExpressionContext.forTarget(
+                    state,
+                    execution.frame(),
+                    execution.memory(),
+                    figureId,
+                    healExecution.nextTargetIndex()
+                );
+            int healAmount = healExecution.amountForCurrentTarget(context);
+            Figure target = state.figure(figureId);
+
+            boolean poisoned = target.conditions()
+                .remove(Conditions.POISON.id());
+            target.conditions().remove(Conditions.WOUND.id());
+            if (!poisoned) {
+                state.healFigure(figureId, healAmount);
+            }
+
+            execution.markAbilityPerformed();
+            healExecution.completeCurrentTarget();
         }
 
         execution.completeCurrentAbility();

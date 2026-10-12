@@ -1,8 +1,8 @@
 package io.github.toflking.gloomhaven.rules.ability.attack.modifier;
 
-import io.github.toflking.gloomhaven.rules.ability.attack.AttackOrigin;
+import io.github.toflking.gloomhaven.rules.ability.attack.ActionOrigin;
 import io.github.toflking.gloomhaven.rules.ability.attack.effect.AttackEffect;
-import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AttackTargetPlan;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetPlan;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.FigurePredicate;
 import io.github.toflking.gloomhaven.rules.ability.value.IntExpression;
 
@@ -26,7 +26,7 @@ public sealed interface AttackModifier
         }
     }
 
-    record ReplaceTargetPlan(AttackTargetPlan replacement)
+    record ReplaceTargetPlan(TargetPlan replacement)
         implements AttackModifier {
 
         public ReplaceTargetPlan {
@@ -84,7 +84,7 @@ public sealed interface AttackModifier
         }
     }
 
-    record ChangeOrigin(AttackOrigin replacement)
+    record ChangeOrigin(ActionOrigin replacement)
         implements AttackModifier {
 
         public ChangeOrigin {

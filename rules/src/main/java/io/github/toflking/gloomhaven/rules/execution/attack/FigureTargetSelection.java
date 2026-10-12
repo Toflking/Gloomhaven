@@ -1,6 +1,6 @@
 package io.github.toflking.gloomhaven.rules.execution.attack;
 
-import io.github.toflking.gloomhaven.rules.ability.attack.AttackOrigin;
+import io.github.toflking.gloomhaven.rules.ability.attack.ActionOrigin;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.DuplicatePolicy;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetSelectionMode;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
@@ -10,12 +10,12 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-public sealed interface AttackChoice
-    permits AttackChoice.FigureTargets,
-    AttackChoice.AreaPlacement,
-    AttackChoice.Path,
-    AttackChoice.Origin,
-    AttackChoice.ChainTarget {
+public sealed interface FigureTargetSelection
+    permits FigureTargetSelection.FigureTargets,
+    FigureTargetSelection.AreaPlacement,
+    FigureTargetSelection.Path,
+    FigureTargetSelection.Origin,
+    FigureTargetSelection.ChainTarget {
 
     record FigureTargets(
         Set<FigureId> eligibleTargets,
@@ -23,20 +23,31 @@ public sealed interface AttackChoice
         int maximumTargets,
         DuplicatePolicy duplicates,
         TargetSelectionMode selectionMode
-    ) implements AttackChoice {
+    ) implements FigureTargetSelection {
 
         public FigureTargets {
             eligibleTargets = Set.copyOf(eligibleTargets);
             Objects.requireNonNull(duplicates, "duplicates");
             Objects.requireNonNull(selectionMode, "selectionMode");
             requireCardinality(minimumTargets, maximumTargets);
+
+            if (minimumTargets < 0) {
+                throw new IllegalArgumentException(
+                    "Minimum targets cannot be negative"
+                );
+            }
+            if (maximumTargets < minimumTargets) {
+                throw new IllegalArgumentException(
+                    "Maximum targets cannot be less than minimum targets"
+                );
+            }
         }
     }
 
     record AreaPlacement(
         List<ResolvedAreaPlacement> placements,
         AreaPlacementControl control
-    ) implements AttackChoice {
+    ) implements FigureTargetSelection {
 
         public AreaPlacement {
             placements = List.copyOf(placements);
@@ -49,7 +60,7 @@ public sealed interface AttackChoice
         HexPosition destination,
         int maximumLength,
         Set<HexPosition> eligibleHexes
-    ) implements AttackChoice {
+    ) implements FigureTargetSelection {
 
         public Path {
             Objects.requireNonNull(start, "start");
@@ -65,7 +76,7 @@ public sealed interface AttackChoice
 
     record Origin(
         List<AttackOriginOption> options
-    ) implements AttackChoice {
+    ) implements FigureTargetSelection {
 
         public Origin {
             options = List.copyOf(options);
@@ -81,7 +92,7 @@ public sealed interface AttackChoice
         int stepIndex,
         Set<FigureId> eligibleTargets,
         boolean optional
-    ) implements AttackChoice {
+    ) implements FigureTargetSelection {
 
         public ChainTarget {
             eligibleTargets = Set.copyOf(eligibleTargets);
@@ -110,14 +121,14 @@ public sealed interface AttackChoice
     }
 
     record AttackOriginOption(
-        AttackOrigin origin,
+        ActionOrigin origin,
         HexPosition position
     ) {
 
         public AttackOriginOption {
             Objects.requireNonNull(origin, "origin");
             Objects.requireNonNull(position, "position");
-            if (origin instanceof AttackOrigin.Choose) {
+            if (origin instanceof ActionOrigin.Choose) {
                 throw new IllegalArgumentException(
                     "An origin option must already be concrete"
                 );

@@ -1,12 +1,13 @@
 package io.github.toflking.gloomhaven.rules.execution.attack;
 
-import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AttackTargetPlan;
+import io.github.toflking.gloomhaven.rules.ability.attack.ActionOrigin;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetPlan;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.DuplicatePolicy;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetSelectionMode;
 import io.github.toflking.gloomhaven.rules.execution.ActionExecution;
-import io.github.toflking.gloomhaven.rules.execution.choice.PendingAreaAttackChoice;
+import io.github.toflking.gloomhaven.rules.execution.choice.PendingAreaChoice;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
-import io.github.toflking.gloomhaven.rules.execution.choice.PendingAttackChoice;
+import io.github.toflking.gloomhaven.rules.execution.choice.PendingFigureTargetChoice;
 import io.github.toflking.gloomhaven.rules.execution.ValidationResult;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioState;
 
@@ -15,39 +16,39 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-public final class AttackTargetValidator {
+public final class TargetValidator {
     private final ScenarioState state;
 
-    public AttackTargetValidator(ScenarioState state) {
+    public TargetValidator(ScenarioState state) {
         this.state = Objects.requireNonNull(state, "state");
     }
 
-    public ValidationResult validateTargets(List<FigureId> targets, PendingAttackChoice choice) {
+    public ValidationResult validateTargets(List<FigureId> targets, PendingFigureTargetChoice choice) {
         Objects.requireNonNull(targets, "targets");
         Objects.requireNonNull(choice, "choice");
 
-        if (targets.size() < choice.minimumTargets()) {
+        if (targets.size() < choice.selection().minimumTargets()) {
             return ValidationResult.invalid(
                 "Too few attack targets were selected"
             );
         }
 
-        if (targets.size() > choice.maximumTargets()) {
+        if (targets.size() > choice.selection().maximumTargets()) {
             return ValidationResult.invalid(
                 "Too many attack targets were selected"
             );
         }
 
         Set<FigureId> distinctTargets = new HashSet<>(targets);
-        if (choice.selectionMode() == TargetSelectionMode.FIXED
-            && (targets.size() != choice.eligibleTargets().size()
-            || !distinctTargets.equals(choice.eligibleTargets()))) {
+        if (choice.selection().selectionMode() == TargetSelectionMode.FIXED
+            && (targets.size() != choice.selection().eligibleTargets().size()
+            || !distinctTargets.equals(choice.selection().eligibleTargets()))) {
             return ValidationResult.invalid(
                 "Fixed attack targets cannot be changed"
             );
         }
 
-        if (choice.duplicates() == DuplicatePolicy.DISTINCT_TARGETS
+        if (choice.selection().duplicates() == DuplicatePolicy.DISTINCT_TARGETS
             && distinctTargets.size() != targets.size()) {
             return ValidationResult.invalid(
                 "The same figure cannot be targeted more than once"
@@ -55,7 +56,7 @@ public final class AttackTargetValidator {
         }
 
         for (FigureId target : targets) {
-            if (!choice.eligibleTargets().contains(target)) {
+            if (!choice.selection().eligibleTargets().contains(target)) {
                 return ValidationResult.invalid(
                     "Selected figure is not an eligible attack target"
                 );
@@ -72,13 +73,14 @@ public final class AttackTargetValidator {
     }
 
     public ValidationResult validateArea(
-        AttackChoice.AreaPlacementOption placement,
-        PendingAreaAttackChoice choice
+        FigureTargetSelection.AreaPlacementOption placement,
+        PendingAreaChoice choice
     ) {
         Objects.requireNonNull(placement, "placement");
         Objects.requireNonNull(choice, "choice");
 
         ResolvedAreaPlacement resolvedPlacement = choice
+            .selection()
             .placements()
             .stream()
             .filter(candidate -> candidate.option().equals(placement))
@@ -87,12 +89,12 @@ public final class AttackTargetValidator {
 
         if (resolvedPlacement == null) {
             return ValidationResult.invalid(
-                "Selected area is not an eligible attack placement"
+                "Selected area is not an eligible placement"
             );
         }
         if (!resolvedPlacement.eligible()) {
             return ValidationResult.invalid(
-                "Selected area is not an eligible attack placement"
+                "Selected area is not an eligible placement"
             );
         }
 
@@ -102,21 +104,43 @@ public final class AttackTargetValidator {
                 "There is no active action execution"
             );
         }
-        if (!execution.actor().equals(choice.attackerId())) {
+        if (!execution.actor().equals(choice.actorId())) {
             return ValidationResult.invalid(
-                "The pending area attack belongs to another figure"
-            );
-        }
-        if (!(execution.attackExecution().attack().targeting()
-            instanceof AttackTargetPlan.Area areaPlan)) {
-            return ValidationResult.invalid(
-                "The active attack does not use area targeting"
+                "The pending area choice belongs to another figure"
             );
         }
 
-        List<FigureId> targets = new AttackTargetResolver(
+        TargetPlan targeting;
+        ActionOrigin origin;
+        switch (choice) {
+            case PendingAreaChoice.Attack ignored -> {
+                targeting = execution.attackExecution()
+                    .attack()
+                    .targeting();
+                origin = execution.attackExecution()
+                    .attack()
+                    .origin();
+            }
+            case PendingAreaChoice.Heal ignored -> {
+                targeting = execution.healExecution()
+                    .heal()
+                    .targeting();
+                origin = execution.healExecution()
+                    .heal()
+                    .origin();
+            }
+        }
+
+        if (!(targeting instanceof TargetPlan.Area areaPlan)) {
+            return ValidationResult.invalid(
+                "The active ability does not use area targeting"
+            );
+        }
+
+        List<FigureId> targets = new TargetResolver(
             state,
-            execution
+            execution,
+            origin
         ).resolveAreaTargets(areaPlan, resolvedPlacement.affectedHexes());
 
         if (targets.isEmpty()) {

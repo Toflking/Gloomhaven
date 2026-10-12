@@ -1,7 +1,7 @@
 package io.github.toflking.gloomhaven.rules.ability.attack;
 
 import io.github.toflking.gloomhaven.rules.ability.attack.effect.AttackEffect;
-import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AttackTargetPlan;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetPlan;
 import io.github.toflking.gloomhaven.rules.ability.value.AbilityValue;
 
 import java.util.List;
@@ -9,8 +9,8 @@ import java.util.Objects;
 
 public record EffectiveAttack(
     AbilityValue amount,
-    AttackOrigin origin,
-    AttackTargetPlan targeting,
+    ActionOrigin origin,
+    TargetPlan targeting,
     List<AttackEffect> effects
 ) {
 
@@ -25,11 +25,11 @@ public record EffectiveAttack(
         return new EffectiveAttack(replacement, origin, targeting, effects);
     }
 
-    public EffectiveAttack withOrigin(AttackOrigin replacement) {
+    public EffectiveAttack withOrigin(ActionOrigin replacement) {
         return new EffectiveAttack(amount, replacement, targeting, effects);
     }
 
-    public EffectiveAttack withTargeting(AttackTargetPlan replacement) {
+    public EffectiveAttack withTargeting(TargetPlan replacement) {
         return new EffectiveAttack(amount, origin, replacement, effects);
     }
 

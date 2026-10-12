@@ -2,19 +2,22 @@ package io.github.toflking.gloomhaven.scenarioscreen.interaction;
 
 import io.github.toflking.gloomhaven.rules.board.HexPosition;
 import io.github.toflking.gloomhaven.rules.execution.attack.AreaPlacementControl;
-import io.github.toflking.gloomhaven.rules.execution.attack.AttackChoice;
+import io.github.toflking.gloomhaven.rules.execution.attack.FigureTargetSelection;
 import io.github.toflking.gloomhaven.rules.execution.attack.ResolvedAreaPlacement;
+import io.github.toflking.gloomhaven.rules.execution.attack.preview.AttackPreview;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class AreaPlacementInteractionTest {
+class AttackAreaPlacementInteractionTest {
     private static final HexPosition FIRST_ANCHOR =
         new HexPosition(0, 0);
     private static final HexPosition SECOND_ANCHOR =
@@ -22,7 +25,7 @@ class AreaPlacementInteractionTest {
 
     @Test
     void pointerPlacementFollowsLocksMovesAndUnlocks() {
-        AreaPlacementInteraction interaction = pointerInteraction();
+        AttackAreaPlacementInteraction interaction = pointerInteraction();
 
         interaction.previewAt(FIRST_ANCHOR);
         interaction.rotate();
@@ -55,10 +58,13 @@ class AreaPlacementInteractionTest {
 
     @Test
     void lockedOriginStartsPlacedAndStillRotates() {
-        AreaPlacementInteraction interaction = new AreaPlacementInteraction(
+        AttackAreaPlacementInteraction interaction = new AttackAreaPlacementInteraction(
             new FigureId("attacker"),
-            placementsFor(FIRST_ANCHOR),
-            AreaPlacementControl.LOCKED_TO_ORIGIN
+            selection(
+                placementsFor(FIRST_ANCHOR),
+                AreaPlacementControl.LOCKED_TO_ORIGIN
+            ),
+            Map.of()
         );
 
         assertTrue(interaction.canConfirm());
@@ -78,7 +84,7 @@ class AreaPlacementInteractionTest {
         HexPosition targetable = new HexPosition(1, 0);
         HexPosition untargetable = new HexPosition(0, 1);
         ResolvedAreaPlacement placement = new ResolvedAreaPlacement(
-            new AttackChoice.AreaPlacementOption(
+            new FigureTargetSelection.AreaPlacementOption(
                 FIRST_ANCHOR,
                 0,
                 false
@@ -86,10 +92,13 @@ class AreaPlacementInteractionTest {
             Set.of(targetable, untargetable),
             Set.of(targetable)
         );
-        AreaPlacementInteraction interaction = new AreaPlacementInteraction(
+        AttackAreaPlacementInteraction interaction = new AttackAreaPlacementInteraction(
             new FigureId("attacker"),
-            List.of(placement),
-            AreaPlacementControl.POINTER_CONTROLLED
+            selection(
+                List.of(placement),
+                AreaPlacementControl.POINTER_CONTROLLED
+            ),
+            Map.of()
         );
 
         interaction.previewAt(FIRST_ANCHOR);
@@ -102,7 +111,7 @@ class AreaPlacementInteractionTest {
     void previewsButDoesNotLockAnIneligiblePlacement() {
         HexPosition affected = new HexPosition(1, 0);
         ResolvedAreaPlacement placement = new ResolvedAreaPlacement(
-            new AttackChoice.AreaPlacementOption(
+            new FigureTargetSelection.AreaPlacementOption(
                 FIRST_ANCHOR,
                 0,
                 false
@@ -111,10 +120,13 @@ class AreaPlacementInteractionTest {
             Set.of(affected),
             false
         );
-        AreaPlacementInteraction interaction = new AreaPlacementInteraction(
+        AttackAreaPlacementInteraction interaction = new AttackAreaPlacementInteraction(
             new FigureId("attacker"),
-            List.of(placement),
-            AreaPlacementControl.POINTER_CONTROLLED
+            selection(
+                List.of(placement),
+                AreaPlacementControl.POINTER_CONTROLLED
+            ),
+            Map.of()
         );
 
         interaction.previewAt(FIRST_ANCHOR);
@@ -126,16 +138,73 @@ class AreaPlacementInteractionTest {
         assertFalse(interaction.canConfirm());
     }
 
-    private static AreaPlacementInteraction pointerInteraction() {
-        return new AreaPlacementInteraction(
-            new FigureId("attacker"),
-            List.of(
-                placementsFor(FIRST_ANCHOR).get(0),
-                placementsFor(FIRST_ANCHOR).get(1),
-                placementsFor(SECOND_ANCHOR).get(0),
-                placementsFor(SECOND_ANCHOR).get(1)
+    @Test
+    void exposesPreviewOnlyForCurrentEligibleArea() {
+        FigureId targetId = new FigureId("target");
+        HexPosition targetPosition = new HexPosition(1, 0);
+        AttackPreview preview = new AttackPreview(
+            3,
+            0,
+            0,
+            0,
+            0,
+            false,
+            3
+        );
+        ResolvedAreaPlacement placement = new ResolvedAreaPlacement(
+            new FigureTargetSelection.AreaPlacementOption(
+                FIRST_ANCHOR,
+                0,
+                false
             ),
-            AreaPlacementControl.POINTER_CONTROLLED
+            Set.of(FIRST_ANCHOR, targetPosition),
+            Set.of(targetPosition),
+            true
+        );
+        AttackAreaPlacementInteraction interaction =
+            new AttackAreaPlacementInteraction(
+                new FigureId("attacker"),
+                selection(
+                    List.of(placement),
+                    AreaPlacementControl.POINTER_CONTROLLED
+                ),
+                Map.of(targetId, preview)
+            );
+
+        assertNull(interaction.previewFor(targetId, targetPosition));
+
+        interaction.previewAt(FIRST_ANCHOR);
+
+        assertEquals(
+            preview,
+            interaction.previewFor(targetId, targetPosition)
+        );
+        assertNull(interaction.previewFor(targetId, FIRST_ANCHOR));
+    }
+
+    private static AttackAreaPlacementInteraction pointerInteraction() {
+        return new AttackAreaPlacementInteraction(
+            new FigureId("attacker"),
+            selection(
+                List.of(
+                    placementsFor(FIRST_ANCHOR).get(0),
+                    placementsFor(FIRST_ANCHOR).get(1),
+                    placementsFor(SECOND_ANCHOR).get(0),
+                    placementsFor(SECOND_ANCHOR).get(1)
+                ),
+                AreaPlacementControl.POINTER_CONTROLLED
+            ),
+            Map.of()
+        );
+    }
+
+    private static FigureTargetSelection.AreaPlacement selection(
+        List<ResolvedAreaPlacement> placements,
+        AreaPlacementControl control
+    ) {
+        return new FigureTargetSelection.AreaPlacement(
+            placements,
+            control
         );
     }
 
@@ -153,7 +222,7 @@ class AreaPlacementInteractionTest {
         int rotation
     ) {
         return new ResolvedAreaPlacement(
-            new AttackChoice.AreaPlacementOption(
+            new FigureTargetSelection.AreaPlacementOption(
                 anchor,
                 rotation,
                 false

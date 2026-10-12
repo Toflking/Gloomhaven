@@ -2,7 +2,7 @@ package io.github.toflking.gloomhaven.rules.content.cards;
 
 import io.github.toflking.gloomhaven.rules.ability.movement.MoveAbility;
 import io.github.toflking.gloomhaven.rules.ability.attack.AttackAbility;
-import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AttackTargetPlan;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetPlan;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AttackTargetPlans;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AreaPlacementRule;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.Cardinality;
@@ -94,7 +94,7 @@ public final class DebugCards {
                 ATTACK_2_AREA_RANGE_3,
                 "Attack 2 Area Range 3",
                 2,
-                new AttackTargetPlan.Area(
+                new TargetPlan.Area(
                     new HexPattern(List.of(
                         new HexPosition(0, 0),
                         new HexPosition(1, 0),
@@ -113,7 +113,7 @@ public final class DebugCards {
                 ATTACK_1_AREA_AROUND_ORIGIN,
                 "Attack 1 Area Around Origin",
                 1,
-                new AttackTargetPlan.Area(
+                new TargetPlan.Area(
                     new HexPattern(List.of(
                         new HexPosition(1, 0),
                         new HexPosition(0, 1)
@@ -148,7 +148,7 @@ public final class DebugCards {
         AbilityCardId id,
         String name,
         int amount,
-        AttackTargetPlan targeting
+        TargetPlan targeting
     ) {
         return new CardDefinition(
             id,

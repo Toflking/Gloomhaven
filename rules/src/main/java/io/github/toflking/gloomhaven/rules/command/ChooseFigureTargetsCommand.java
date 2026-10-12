@@ -4,9 +4,9 @@ import io.github.toflking.gloomhaven.rules.figure.FigureId;
 
 import java.util.List;
 
-public record ChooseAttackTargetsCommand(List<FigureId> targets) implements GameCommand {
+public record ChooseFigureTargetsCommand(List<FigureId> targets) implements GameCommand {
 
-    public ChooseAttackTargetsCommand {
+    public ChooseFigureTargetsCommand {
         targets = List.copyOf(targets);
     }
 }

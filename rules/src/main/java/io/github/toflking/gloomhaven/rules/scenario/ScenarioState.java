@@ -115,6 +115,11 @@ public class ScenarioState {
         figure.takeDamage(amount);
     }
 
+    public void healFigure(FigureId figureId, int amount) {
+        Figure figure = figure(figureId);
+        figure.heal(amount);
+    }
+
     public void setActiveFigure(FigureId figureId) {
         if (!figures.containsKey(figureId)) {
             throw new IllegalArgumentException(

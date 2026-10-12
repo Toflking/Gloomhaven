@@ -2,7 +2,7 @@ package io.github.toflking.gloomhaven.rules.execution.attack;
 
 import io.github.toflking.gloomhaven.rules.ability.attack.AttackAbility;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AreaPlacementRule;
-import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AttackTargetPlan;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetPlan;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AttackTargetPlans;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.DuplicatePolicy;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.FigurePredicate;
@@ -22,6 +22,7 @@ import io.github.toflking.gloomhaven.rules.card.AbilityCardId;
 import io.github.toflking.gloomhaven.rules.card.AbilitySource;
 import io.github.toflking.gloomhaven.rules.card.CardHalf;
 import io.github.toflking.gloomhaven.rules.execution.ActionExecution;
+import io.github.toflking.gloomhaven.rules.execution.AbilityExpressionContext;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioState;
 import org.junit.jupiter.api.Test;
@@ -38,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class AttackTargetResolverTest {
+class TargetResolverTest {
     private static final FigureId ACTOR = new FigureId("actor");
     private static final FigureId ENEMY = new FigureId("enemy");
     private static final AbilitySource SOURCE = new AbilitySource(
@@ -48,15 +49,15 @@ class AttackTargetResolverTest {
 
     @Test
     void resolvesQueryPlansThroughTheGeneralPlanEntryPoint() {
-        AttackTargetPlan.Query plan =
+        TargetPlan.Query plan =
             AttackTargetPlans.singleEnemyWithinRange(2);
         ScenarioState state = scenarioWithRadius(2);
         state.addFigure(character(ACTOR, 10), new HexPosition(0, 0));
         state.addFigure(monster(ENEMY, 10), new HexPosition(1, 0));
 
-        AttackChoice.FigureTargets choice = assertInstanceOf(
-            AttackChoice.FigureTargets.class,
-            resolver(state, plan).resolve(plan)
+        FigureTargetSelection.FigureTargets choice = assertInstanceOf(
+            FigureTargetSelection.FigureTargets.class,
+            resolver(state, plan).resolveAttack(plan).selection()
         );
 
         assertEquals(Set.of(ENEMY), choice.eligibleTargets());
@@ -64,7 +65,7 @@ class AttackTargetResolverTest {
 
     @Test
     void resolvesAnAreaFixedAroundTheAttackOrigin() {
-        AttackTargetPlan.Area plan = new AttackTargetPlan.Area(
+        TargetPlan.Area plan = new TargetPlan.Area(
             new HexPattern(List.of(
                 new HexPosition(1, 0),
                 new HexPosition(0, 1)
@@ -76,14 +77,14 @@ class AttackTargetResolverTest {
         state.addFigure(character(ACTOR, 10), new HexPosition(0, 0));
         state.addFigure(monster(ENEMY, 10), new HexPosition(1, 0));
 
-        AttackChoice.AreaPlacement choice = assertInstanceOf(
-            AttackChoice.AreaPlacement.class,
-            resolver(state, plan).resolve(plan)
+        FigureTargetSelection.AreaPlacement choice = assertInstanceOf(
+            FigureTargetSelection.AreaPlacement.class,
+            resolver(state, plan).resolveAttack(plan).selection()
         );
 
         assertEquals(
             List.of(new ResolvedAreaPlacement(
-                new AttackChoice.AreaPlacementOption(
+                new FigureTargetSelection.AreaPlacementOption(
                     new HexPosition(0, 0),
                     0,
                     false
@@ -99,7 +100,7 @@ class AttackTargetResolverTest {
 
     @Test
     void resolvesRotatedAreaPlacementsWithinRange() {
-        AttackTargetPlan.Area plan = new AttackTargetPlan.Area(
+        TargetPlan.Area plan = new TargetPlan.Area(
             new HexPattern(List.of(
                 new HexPosition(0, 0),
                 new HexPosition(1, 0)
@@ -116,14 +117,14 @@ class AttackTargetResolverTest {
         state.addFigure(character(ACTOR, 10), new HexPosition(0, 0));
         state.addFigure(monster(ENEMY, 10), new HexPosition(0, 2));
 
-        AttackChoice.AreaPlacement choice = assertInstanceOf(
-            AttackChoice.AreaPlacement.class,
-            resolver(state, plan).resolve(plan)
+        FigureTargetSelection.AreaPlacement choice = assertInstanceOf(
+            FigureTargetSelection.AreaPlacement.class,
+            resolver(state, plan).resolveAttack(plan).selection()
         );
 
         assertTrue(choice.placements().stream().anyMatch(
             placement -> placement.option().equals(
-                new AttackChoice.AreaPlacementOption(
+                new FigureTargetSelection.AreaPlacementOption(
                     new HexPosition(0, 1),
                     1,
                     false
@@ -134,7 +135,7 @@ class AttackTargetResolverTest {
 
     @Test
     void ordersAroundOriginPlacementsByConsecutiveRotation() {
-        AttackTargetPlan.Area plan = new AttackTargetPlan.Area(
+        TargetPlan.Area plan = new TargetPlan.Area(
             new HexPattern(List.of(new HexPosition(1, 0))),
             new AreaPlacementRule.AroundOrigin(true, false),
             enemiesOfActor()
@@ -158,9 +159,9 @@ class AttackTargetResolverTest {
             );
         }
 
-        AttackChoice.AreaPlacement choice = assertInstanceOf(
-            AttackChoice.AreaPlacement.class,
-            resolver(state, plan).resolve(plan)
+        FigureTargetSelection.AreaPlacement choice = assertInstanceOf(
+            FigureTargetSelection.AreaPlacement.class,
+            resolver(state, plan).resolveAttack(plan).selection()
         );
 
         assertEquals(
@@ -206,15 +207,15 @@ class AttackTargetResolverTest {
             monster(new FigureId("blocked-enemy"), 10),
             blocked
         );
-        AttackTargetPlan.Area plan = new AttackTargetPlan.Area(
+        TargetPlan.Area plan = new TargetPlan.Area(
             new HexPattern(List.of(visible, blocked)),
             new AreaPlacementRule.AroundOrigin(false, false),
             enemiesOfActor()
         );
 
-        AttackChoice.AreaPlacement choice = assertInstanceOf(
-            AttackChoice.AreaPlacement.class,
-            resolver(state, plan).resolve(plan)
+        FigureTargetSelection.AreaPlacement choice = assertInstanceOf(
+            FigureTargetSelection.AreaPlacement.class,
+            resolver(state, plan).resolveAttack(plan).selection()
         );
         ResolvedAreaPlacement placement =
             choice.placements().getFirst();
@@ -225,7 +226,7 @@ class AttackTargetResolverTest {
 
     @Test
     void excludesQueryTargetsWithoutRequiredLineOfSight() {
-        AttackTargetPlan.Query plan =
+        TargetPlan.Query plan =
             AttackTargetPlans.singleEnemyWithinRange(2);
         HexPosition actorPosition = new HexPosition(0, 0);
         HexPosition enemyPosition = new HexPosition(1, 0);
@@ -244,9 +245,9 @@ class AttackTargetResolverTest {
         state.addFigure(character(ACTOR, 10), actorPosition);
         state.addFigure(monster(ENEMY, 10), enemyPosition);
 
-        AttackChoice.FigureTargets choice = assertInstanceOf(
-            AttackChoice.FigureTargets.class,
-            resolver(state, plan).resolve(plan)
+        FigureTargetSelection.FigureTargets choice = assertInstanceOf(
+            FigureTargetSelection.FigureTargets.class,
+            resolver(state, plan).resolveAttack(plan).selection()
         );
 
         assertTrue(choice.eligibleTargets().isEmpty());
@@ -254,14 +255,14 @@ class AttackTargetResolverTest {
 
     @Test
     void rejectsTargetPlansWhoseChoiceFlowsAreNotImplemented() {
-        AttackTargetPlan.Query query =
+        TargetPlan.Query query =
             AttackTargetPlans.singleEnemyWithinRange(2);
         ExecutionVariableId primary =
             new ExecutionVariableId("primary");
         ExecutionVariableId path =
             new ExecutionVariableId("path");
-        AttackTargetPlan.PrimaryAndDerived primaryAndDerived =
-            new AttackTargetPlan.PrimaryAndDerived(
+        TargetPlan.PrimaryAndDerived primaryAndDerived =
+            new TargetPlan.PrimaryAndDerived(
                 query,
                 primary,
                 new PathSelectionRule(
@@ -273,8 +274,8 @@ class AttackTargetResolverTest {
                 query.candidates(),
                 DuplicatePolicy.DISTINCT_TARGETS
             );
-        AttackTargetPlan.Chain chain = new AttackTargetPlan.Chain(
-            List.of(new AttackTargetPlan.ChainStep(
+        TargetPlan.Chain chain = new TargetPlan.Chain(
+            List.of(new TargetPlan.ChainStep(
                 query.candidates(),
                 false
             )),
@@ -282,15 +283,15 @@ class AttackTargetResolverTest {
         );
         ScenarioState state = scenarioWithRadius(1);
         state.addFigure(character(ACTOR, 10), new HexPosition(0, 0));
-        AttackTargetResolver resolver = resolver(state, query);
+        TargetResolver resolver = resolver(state, query);
 
         assertThrows(
             UnsupportedOperationException.class,
-            () -> resolver.resolve(primaryAndDerived)
+            () -> resolver.resolveAttack(primaryAndDerived)
         );
         assertThrows(
             UnsupportedOperationException.class,
-            () -> resolver.resolve(chain)
+            () -> resolver.resolveAttack(chain)
         );
     }
 
@@ -301,9 +302,9 @@ class AttackTargetResolverTest {
         );
     }
 
-    private static AttackTargetResolver resolver(
+    private static TargetResolver resolver(
         ScenarioState state,
-        AttackTargetPlan plan
+        TargetPlan plan
     ) {
         AttackAbility attack = new AttackAbility(
             AbilityValue.fixed(2),
@@ -311,8 +312,15 @@ class AttackTargetResolverTest {
         );
         state.startActionExecution(ACTOR, SOURCE, List.of(attack));
         ActionExecution execution = state.execution();
-        execution.beginAttack(attack.effectiveDefinition());
-        return new AttackTargetResolver(state, execution);
+        execution.beginAttack(
+            attack.effectiveDefinition(),
+            AbilityExpressionContext.withoutTarget(
+                state,
+                execution.frame(),
+                execution.memory()
+            )
+        );
+        return new TargetResolver(state, execution);
     }
 
     private static ScenarioState scenarioWithRadius(int radius) {

@@ -2,7 +2,7 @@ package io.github.toflking.gloomhaven.rules.execution.attack;
 
 import io.github.toflking.gloomhaven.rules.ability.attack.AttackAbility;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AreaPlacementRule;
-import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AttackTargetPlan;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetPlan;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.DuplicatePolicy;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.FigurePredicate;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.FigureReference;
@@ -13,13 +13,14 @@ import io.github.toflking.gloomhaven.rules.card.AbilityCardId;
 import io.github.toflking.gloomhaven.rules.card.AbilitySource;
 import io.github.toflking.gloomhaven.rules.card.CardHalf;
 import io.github.toflking.gloomhaven.rules.execution.ActionExecution;
-import io.github.toflking.gloomhaven.rules.execution.choice.PendingAreaAttackChoice;
+import io.github.toflking.gloomhaven.rules.execution.AbilityExpressionContext;
+import io.github.toflking.gloomhaven.rules.execution.choice.PendingAreaChoice;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import io.github.toflking.gloomhaven.rules.board.HexBoard;
 import io.github.toflking.gloomhaven.rules.board.HexPosition;
 import io.github.toflking.gloomhaven.rules.board.HexTile;
 import io.github.toflking.gloomhaven.rules.board.TerrainType;
-import io.github.toflking.gloomhaven.rules.execution.choice.PendingAttackChoice;
+import io.github.toflking.gloomhaven.rules.execution.choice.PendingFigureTargetChoice;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioState;
 import org.junit.jupiter.api.Test;
 
@@ -33,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static io.github.toflking.gloomhaven.rules.TestFigures.character;
 import static io.github.toflking.gloomhaven.rules.TestFigures.monster;
 
-class AttackTargetValidatorTest {
+class TargetValidatorTest {
     private static final FigureId ATTACKER =
         new FigureId("attacker");
     private static final FigureId TARGET =
@@ -46,10 +47,9 @@ class AttackTargetValidatorTest {
     @Test
     void acceptsOnlyEligibleTargetsWithinCardinality() {
         ScenarioState state = scenario();
-        AttackTargetValidator validator =
-            new AttackTargetValidator(state);
-        PendingAttackChoice choice = new PendingAttackChoice(
-            ATTACKER,
+        TargetValidator validator =
+            new TargetValidator(state);
+        PendingFigureTargetChoice choice = attackChoice(
             Set.of(TARGET),
             0,
             1,
@@ -70,8 +70,7 @@ class AttackTargetValidatorTest {
     @Test
     void allowsRepeatedTargetsWhenTheEffectiveAttackPermitsIt() {
         ScenarioState state = scenario();
-        PendingAttackChoice choice = new PendingAttackChoice(
-            ATTACKER,
+        PendingFigureTargetChoice choice = attackChoice(
             Set.of(TARGET),
             0,
             2,
@@ -80,7 +79,7 @@ class AttackTargetValidatorTest {
         );
 
         assertTrue(
-            new AttackTargetValidator(state)
+            new TargetValidator(state)
                 .validateTargets(List.of(TARGET, TARGET), choice)
                 .isValid()
         );
@@ -89,16 +88,15 @@ class AttackTargetValidatorTest {
     @Test
     void rejectsChangesToFixedTargets() {
         ScenarioState state = scenario();
-        PendingAttackChoice choice = new PendingAttackChoice(
-            ATTACKER,
+        PendingFigureTargetChoice choice = attackChoice(
             Set.of(ATTACKER, TARGET),
             2,
             2,
             DuplicatePolicy.REPEATED_TARGETS_ALLOWED,
             TargetSelectionMode.FIXED
         );
-        AttackTargetValidator validator =
-            new AttackTargetValidator(state);
+        TargetValidator validator =
+            new TargetValidator(state);
 
         assertTrue(
             validator.validateTargets(List.of(TARGET, ATTACKER), choice).isValid()
@@ -111,31 +109,34 @@ class AttackTargetValidatorTest {
     @Test
     void resolvesAreaTargetsFromTheCurrentScenarioState() {
         ScenarioState state = scenario();
-        AttackTargetPlan.Area plan = areaPlan();
+        TargetPlan.Area plan = areaPlan();
         AttackAbility attack = new AttackAbility(
             AbilityValue.fixed(2),
             plan
         );
         state.startActionExecution(ATTACKER, SOURCE, List.of(attack));
         ActionExecution execution = state.execution();
-        execution.beginAttack(attack.effectiveDefinition());
+        beginAttack(state, execution, attack);
 
-        AttackChoice.AreaPlacementOption option =
-            new AttackChoice.AreaPlacementOption(
+        FigureTargetSelection.AreaPlacementOption option =
+            new FigureTargetSelection.AreaPlacementOption(
                 new HexPosition(0, 0),
                 0,
                 false
             );
-        PendingAreaAttackChoice choice = new PendingAreaAttackChoice(
+        PendingAreaChoice choice = new PendingAreaChoice.Attack(
             ATTACKER,
-            List.of(new ResolvedAreaPlacement(
-                option,
-                Set.of(new HexPosition(1, 0))
-            )),
-            AreaPlacementControl.LOCKED_TO_ORIGIN
+            new FigureTargetSelection.AreaPlacement(
+                List.of(new ResolvedAreaPlacement(
+                    option,
+                    Set.of(new HexPosition(1, 0))
+                )),
+                AreaPlacementControl.LOCKED_TO_ORIGIN
+            ),
+            Map.of()
         );
 
-        var result = new AttackTargetValidator(state)
+        var result = new TargetValidator(state)
             .validateArea(option, choice);
 
         assertTrue(result.isValid());
@@ -145,36 +146,39 @@ class AttackTargetValidatorTest {
     @Test
     void rejectsAnAreaPlacementThatWasNotOffered() {
         ScenarioState state = scenario();
-        AttackTargetPlan.Area plan = areaPlan();
+        TargetPlan.Area plan = areaPlan();
         AttackAbility attack = new AttackAbility(
             AbilityValue.fixed(2),
             plan
         );
         state.startActionExecution(ATTACKER, SOURCE, List.of(attack));
-        state.execution().beginAttack(attack.effectiveDefinition());
+        beginAttack(state, state.execution(), attack);
 
-        AttackChoice.AreaPlacementOption eligible =
-            new AttackChoice.AreaPlacementOption(
+        FigureTargetSelection.AreaPlacementOption eligible =
+            new FigureTargetSelection.AreaPlacementOption(
                 new HexPosition(0, 0),
                 0,
                 false
             );
-        AttackChoice.AreaPlacementOption unlisted =
-            new AttackChoice.AreaPlacementOption(
+        FigureTargetSelection.AreaPlacementOption unlisted =
+            new FigureTargetSelection.AreaPlacementOption(
                 new HexPosition(1, 0),
                 0,
                 false
             );
-        PendingAreaAttackChoice choice = new PendingAreaAttackChoice(
+        PendingAreaChoice choice = new PendingAreaChoice.Attack(
             ATTACKER,
-            List.of(new ResolvedAreaPlacement(
-                eligible,
-                Set.of(new HexPosition(1, 0))
-            )),
-            AreaPlacementControl.LOCKED_TO_ORIGIN
+            new FigureTargetSelection.AreaPlacement(
+                List.of(new ResolvedAreaPlacement(
+                    eligible,
+                    Set.of(new HexPosition(1, 0))
+                )),
+                AreaPlacementControl.LOCKED_TO_ORIGIN
+            ),
+            Map.of()
         );
 
-        assertFalse(new AttackTargetValidator(state)
+        assertFalse(new TargetValidator(state)
             .validateArea(unlisted, choice)
             .isValid());
     }
@@ -182,44 +186,82 @@ class AttackTargetValidatorTest {
     @Test
     void rejectsAnIneligibleAreaPreview() {
         ScenarioState state = scenario();
-        AttackTargetPlan.Area plan = areaPlan();
+        TargetPlan.Area plan = areaPlan();
         AttackAbility attack = new AttackAbility(
             AbilityValue.fixed(2),
             plan
         );
         state.startActionExecution(ATTACKER, SOURCE, List.of(attack));
-        state.execution().beginAttack(attack.effectiveDefinition());
+        beginAttack(state, state.execution(), attack);
 
-        AttackChoice.AreaPlacementOption option =
-            new AttackChoice.AreaPlacementOption(
+        FigureTargetSelection.AreaPlacementOption option =
+            new FigureTargetSelection.AreaPlacementOption(
                 new HexPosition(0, 0),
                 0,
                 false
             );
-        PendingAreaAttackChoice choice = new PendingAreaAttackChoice(
+        PendingAreaChoice choice = new PendingAreaChoice.Attack(
             ATTACKER,
-            List.of(new ResolvedAreaPlacement(
-                option,
-                Set.of(new HexPosition(1, 0)),
-                Set.of(new HexPosition(1, 0)),
-                false
-            )),
-            AreaPlacementControl.LOCKED_TO_ORIGIN
+            new FigureTargetSelection.AreaPlacement(
+                List.of(new ResolvedAreaPlacement(
+                    option,
+                    Set.of(new HexPosition(1, 0)),
+                    Set.of(new HexPosition(1, 0)),
+                    false
+                )),
+                AreaPlacementControl.LOCKED_TO_ORIGIN
+            ),
+            Map.of()
         );
 
-        assertFalse(new AttackTargetValidator(state)
+        assertFalse(new TargetValidator(state)
             .validateArea(option, choice)
             .isValid());
     }
 
-    private static AttackTargetPlan.Area areaPlan() {
-        return new AttackTargetPlan.Area(
+    private static TargetPlan.Area areaPlan() {
+        return new TargetPlan.Area(
             new HexPattern(List.of(new HexPosition(1, 0))),
             new AreaPlacementRule.AroundOrigin(false, false),
             new FigurePredicate.Relationship(
                 new FigureReference.Actor(),
                 FigurePredicate.FigureRelation.ENEMY
             )
+        );
+    }
+
+    private static void beginAttack(
+        ScenarioState state,
+        ActionExecution execution,
+        AttackAbility attack
+    ) {
+        execution.beginAttack(
+            attack.effectiveDefinition(),
+            AbilityExpressionContext.withoutTarget(
+                state,
+                execution.frame(),
+                execution.memory()
+            )
+        );
+    }
+
+    private static PendingFigureTargetChoice attackChoice(
+        Set<FigureId> eligibleTargets,
+        int minimumTargets,
+        int maximumTargets,
+        DuplicatePolicy duplicates,
+        TargetSelectionMode selectionMode
+    ) {
+        return new PendingFigureTargetChoice.Attack(
+            ATTACKER,
+            new FigureTargetSelection.FigureTargets(
+                eligibleTargets,
+                minimumTargets,
+                maximumTargets,
+                duplicates,
+                selectionMode
+            ),
+            Map.of()
         );
     }
 

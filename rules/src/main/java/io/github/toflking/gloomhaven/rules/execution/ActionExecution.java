@@ -2,7 +2,9 @@ package io.github.toflking.gloomhaven.rules.execution;
 
 import io.github.toflking.gloomhaven.rules.ability.Ability;
 import io.github.toflking.gloomhaven.rules.ability.attack.EffectiveAttack;
+import io.github.toflking.gloomhaven.rules.ability.heal.EffectiveHeal;
 import io.github.toflking.gloomhaven.rules.execution.attack.AttackExecutionState;
+import io.github.toflking.gloomhaven.rules.execution.heal.HealExecutionState;
 import io.github.toflking.gloomhaven.rules.card.AbilitySource;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import io.github.toflking.gloomhaven.rules.execution.choice.PendingChoice;
@@ -20,6 +22,7 @@ public final class ActionExecution {
     private int currentAbilityIndex;
     private PendingChoice pendingChoice;
     private AttackExecutionState attackExecution;
+    private HealExecutionState healExecution;
 
     private boolean abilityPerformed;
     private boolean cancellationLocked;
@@ -46,6 +49,7 @@ public final class ActionExecution {
             0,
             null,
             null,
+            null,
             false,
             false
         );
@@ -58,6 +62,7 @@ public final class ActionExecution {
         int currentAbilityIndex,
         PendingChoice pendingChoice,
         AttackExecutionState attackExecution,
+        HealExecutionState healExecution,
         boolean abilityPerformed,
         boolean cancellationLocked
     ) {
@@ -67,6 +72,7 @@ public final class ActionExecution {
         this.currentAbilityIndex = currentAbilityIndex;
         this.pendingChoice = pendingChoice;
         this.attackExecution = attackExecution;
+        this.healExecution = healExecution;
         this.abilityPerformed = abilityPerformed;
         this.cancellationLocked = cancellationLocked;
     }
@@ -137,13 +143,19 @@ public final class ActionExecution {
         return memory;
     }
 
-    public void beginAttack(EffectiveAttack attack) {
-        if (attackExecution != null) {
+    public void beginAttack(
+        EffectiveAttack attack,
+        AbilityExpressionContext abilityStartContext
+    ) {
+        if (attackExecution != null || healExecution != null) {
             throw new IllegalStateException(
-                "An attack execution is already active"
+                "A target-based ability execution is already active"
             );
         }
-        attackExecution = new AttackExecutionState(attack);
+        attackExecution = new AttackExecutionState(
+            attack,
+            abilityStartContext
+        );
     }
 
     public AttackExecutionState attackExecution() {
@@ -169,6 +181,44 @@ public final class ActionExecution {
         attackExecution = null;
     }
 
+    public void beginHeal(
+        EffectiveHeal heal,
+        AbilityExpressionContext abilityStartContext
+    ) {
+        if (attackExecution != null || healExecution != null) {
+            throw new IllegalStateException(
+                "A target-based ability execution is already active"
+            );
+        }
+        healExecution = new HealExecutionState(
+            heal,
+            abilityStartContext
+        );
+    }
+
+    public HealExecutionState healExecution() {
+        if (healExecution == null) {
+            throw new IllegalStateException(
+                "There is no active heal execution"
+            );
+        }
+        return healExecution;
+    }
+
+    public void finishHeal() {
+        if (healExecution == null) {
+            throw new IllegalStateException(
+                "There is no active heal execution"
+            );
+        }
+        if (!healExecution.isFinished()) {
+            throw new IllegalStateException(
+                "Cannot finish a heal while targets remain unresolved"
+            );
+        }
+        healExecution = null;
+    }
+
     public int currentAbilityIndex() {
         return currentAbilityIndex;
     }
@@ -178,6 +228,9 @@ public final class ActionExecution {
         if (attackExecution != null) {
             finishAttack();
         }
+        if (healExecution != null) {
+            finishHeal();
+        }
         advance();
     }
 
@@ -185,6 +238,7 @@ public final class ActionExecution {
         lockCancellation();
         clearPendingChoice();
         attackExecution = null;
+        healExecution = null;
         advance();
     }
 
@@ -214,6 +268,8 @@ public final class ActionExecution {
             Optional.ofNullable(pendingChoice),
             Optional.ofNullable(attackExecution)
                 .map(AttackExecutionState::snapshot),
+            Optional.ofNullable(healExecution)
+                .map(HealExecutionState::snapshot),
             abilityPerformed,
             cancellationLocked
         );
@@ -231,6 +287,9 @@ public final class ActionExecution {
             snapshot.attackExecution()
                 .map(AttackExecutionState::restore)
                 .orElse(null),
+            snapshot.healExecution()
+                .map(HealExecutionState::restore)
+                .orElse(null),
             snapshot.abilityPerformed(),
             snapshot.cancellationLocked()
         );
@@ -243,6 +302,7 @@ public final class ActionExecution {
         int currentAbilityIndex,
         Optional<PendingChoice> pendingChoice,
         Optional<AttackExecutionState.Snapshot> attackExecution,
+        Optional<HealExecutionState.Snapshot> healExecution,
         boolean abilityPerformed,
         boolean cancellationLocked
     ) {
@@ -253,6 +313,14 @@ public final class ActionExecution {
             Objects.requireNonNull(memory, "memory");
             Objects.requireNonNull(pendingChoice, "pendingChoice");
             Objects.requireNonNull(attackExecution, "attackExecution");
+            Objects.requireNonNull(healExecution, "healExecution");
+
+            if (attackExecution.isPresent()
+                && healExecution.isPresent()) {
+                throw new IllegalArgumentException(
+                    "Attack and heal executions cannot both be active"
+                );
+            }
 
             if (currentAbilityIndex < 0
                 || currentAbilityIndex > abilities.size()) {

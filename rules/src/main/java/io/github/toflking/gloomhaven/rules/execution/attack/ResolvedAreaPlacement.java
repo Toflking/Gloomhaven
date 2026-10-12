@@ -6,7 +6,7 @@ import java.util.Objects;
 import java.util.Set;
 
 public record ResolvedAreaPlacement(
-    AttackChoice.AreaPlacementOption option,
+    FigureTargetSelection.AreaPlacementOption option,
     Set<HexPosition> affectedHexes,
     Set<HexPosition> targetableHexes,
     boolean eligible
@@ -23,14 +23,14 @@ public record ResolvedAreaPlacement(
     }
 
     public ResolvedAreaPlacement(
-        AttackChoice.AreaPlacementOption option,
+        FigureTargetSelection.AreaPlacementOption option,
         Set<HexPosition> affectedHexes
     ) {
         this(option, affectedHexes, affectedHexes, true);
     }
 
     public ResolvedAreaPlacement(
-        AttackChoice.AreaPlacementOption option,
+        FigureTargetSelection.AreaPlacementOption option,
         Set<HexPosition> affectedHexes,
         Set<HexPosition> targetableHexes
     ) {

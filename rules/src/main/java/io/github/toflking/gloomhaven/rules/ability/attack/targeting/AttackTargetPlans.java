@@ -7,7 +7,7 @@ public final class AttackTargetPlans {
     private AttackTargetPlans() {
     }
 
-    public static AttackTargetPlan.Query singleEnemyWithinRange(
+    public static TargetPlan.Query singleEnemyWithinRange(
         int range
     ) {
         return enemiesWithinRange(
@@ -18,11 +18,11 @@ public final class AttackTargetPlans {
         );
     }
 
-    public static AttackTargetPlan.Query enemiesWithinRange(
+    public static TargetPlan.Query enemiesWithinRange(
         IntExpression range,
         Cardinality cardinality
     ) {
-        return new AttackTargetPlan.Query(
+        return new TargetPlan.Query(
             new TargetQuery(
                 new TargetRegion.WithinRangeOf(
                     new TargetAnchor.AttackOrigin(),
@@ -39,8 +39,8 @@ public final class AttackTargetPlans {
         );
     }
 
-    public static AttackTargetPlan.Query allAdjacentEnemies() {
-        return new AttackTargetPlan.Query(
+    public static TargetPlan.Query allAdjacentEnemies() {
+        return new TargetPlan.Query(
             new TargetQuery(
                 new TargetRegion.AdjacentTo(
                     new TargetAnchor.AttackOrigin()

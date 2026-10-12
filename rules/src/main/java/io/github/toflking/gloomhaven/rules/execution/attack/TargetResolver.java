@@ -1,11 +1,17 @@
 package io.github.toflking.gloomhaven.rules.execution.attack;
 
-import io.github.toflking.gloomhaven.rules.ability.attack.AttackOrigin;
+import io.github.toflking.gloomhaven.rules.ability.attack.ActionOrigin;
+import io.github.toflking.gloomhaven.rules.ability.attack.EffectiveAttack;
+import io.github.toflking.gloomhaven.rules.ability.attack.effect.AttackEffect;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.*;
 import io.github.toflking.gloomhaven.rules.board.HexPattern;
 import io.github.toflking.gloomhaven.rules.board.HexPosition;
 import io.github.toflking.gloomhaven.rules.board.LineOfSightResolver;
+import io.github.toflking.gloomhaven.rules.conditions.Conditions;
+import io.github.toflking.gloomhaven.rules.execution.AbilityExpressionContext;
 import io.github.toflking.gloomhaven.rules.execution.ActionExecution;
+import io.github.toflking.gloomhaven.rules.execution.attack.preview.AttackPreview;
+import io.github.toflking.gloomhaven.rules.execution.attack.preview.HealPreview;
 import io.github.toflking.gloomhaven.rules.figure.Figure;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import io.github.toflking.gloomhaven.rules.figure.identities.*;
@@ -22,45 +28,183 @@ import java.util.Set;
 import static io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetSelectionMode.FIXED;
 import static io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetSelectionMode.MANUAL;
 
-public final class AttackTargetResolver {
+public final class TargetResolver {
     private final ScenarioState state;
     private final ActionExecution execution;
     private final HexPosition attackOrigin;
-    private final AttackExpressionContext expressionContext;
+    private final AbilityExpressionContext expressionContext;
 
-    public AttackTargetResolver(
+    public TargetResolver(
         ScenarioState state,
         ActionExecution execution
+    ) {
+        this(
+            state,
+            execution,
+            execution.attackExecution().attack().origin()
+        );
+    }
+
+    public TargetResolver(
+        ScenarioState state,
+        ActionExecution execution,
+        ActionOrigin origin
     ) {
         this.state = Objects.requireNonNull(state, "state");
         this.execution = Objects.requireNonNull(execution, "execution");
         this.attackOrigin = resolveAttackOrigin(
-            execution.attackExecution().attack().origin()
+            Objects.requireNonNull(origin, "origin")
         );
-        this.expressionContext = new AttackExpressionContext(
+        this.expressionContext = AbilityExpressionContext.withoutTarget(
             state,
             execution.frame(),
-            execution.memory(),
-            null,
-            0
+            execution.memory()
         );
     }
 
-    public AttackChoice resolve(AttackTargetPlan plan) {
+    public ResolvedAttackChoice resolveAttack(TargetPlan plan) {
         Objects.requireNonNull(plan, "plan");
 
-        return switch (plan) {
-            case AttackTargetPlan.Query query -> resolveQuery(query);
-            case AttackTargetPlan.Area area -> resolveArea(area);
-            case AttackTargetPlan.PrimaryAndDerived ignored ->
+        FigureTargetSelection selection = switch (plan) {
+            case TargetPlan.Query query -> resolveQuery(query);
+            case TargetPlan.Area area -> resolveArea(area);
+            case TargetPlan.PrimaryAndDerived ignored ->
                 throw unsupported(plan);
-            case AttackTargetPlan.Chain ignored ->
+            case TargetPlan.Chain ignored ->
                 throw unsupported(plan);
+        };
+
+        return new ResolvedAttackChoice(
+            selection,
+            attackPreviews(plan, selection)
+        );
+    }
+
+    public ResolvedHealChoice resolveHeal(TargetPlan plan) {
+        Objects.requireNonNull(plan, "plan");
+
+        FigureTargetSelection selection = switch (plan) {
+            case TargetPlan.Query query -> resolveQuery(query);
+            case TargetPlan.Area area -> resolveArea(area);
+            case TargetPlan.PrimaryAndDerived ignored ->
+                throw unsupported(plan);
+            case TargetPlan.Chain ignored -> throw unsupported(plan);
+        };
+
+        return new ResolvedHealChoice(
+            selection,
+            healPreviews(plan, selection)
+        );
+    }
+
+    private Map<FigureId, AttackPreview> attackPreviews(
+        TargetPlan plan,
+        FigureTargetSelection selection
+    ) {
+        EffectiveAttack attack = execution.attackExecution().attack();
+        Map<FigureId, AttackPreview> previews = new LinkedHashMap<>();
+
+        int previewIndex = 0;
+        for (FigureId targetId : previewTargets(plan, selection)) {
+            AbilityExpressionContext context =
+                AbilityExpressionContext.forTarget(
+                    state,
+                    execution.frame(),
+                    execution.memory(),
+                    targetId,
+                    previewIndex++
+                );
+            int attackValue = execution.attackExecution()
+                .previewAmount(context);
+            int pierce = attack.effects().stream()
+                .filter(AttackEffect.Pierce.class::isInstance)
+                .map(AttackEffect.Pierce.class::cast)
+                .mapToInt(effect -> Math.max(
+                    0,
+                    effect.amount().evaluate(context)
+                ))
+                .sum();
+            boolean poisoned = state.figure(targetId)
+                .conditions()
+                .contains(Conditions.POISON.id());
+            int projectedDamage = attackValue + (poisoned ? 1 : 0);
+
+            previews.put(targetId, new AttackPreview(
+                attackValue,
+                0,
+                0,
+                pierce,
+                0,
+                poisoned,
+                projectedDamage
+            ));
+        }
+        return Map.copyOf(previews);
+    }
+
+    private Map<FigureId, HealPreview> healPreviews(
+        TargetPlan plan,
+        FigureTargetSelection selection
+    ) {
+        Map<FigureId, HealPreview> previews = new LinkedHashMap<>();
+
+        int previewIndex = 0;
+        for (FigureId targetId : previewTargets(plan, selection)) {
+            AbilityExpressionContext context =
+                AbilityExpressionContext.forTarget(
+                    state,
+                    execution.frame(),
+                    execution.memory(),
+                    targetId,
+                    previewIndex++
+                );
+            int healValue = execution.healExecution()
+                .previewAmount(context);
+            Figure target = state.figure(targetId);
+            boolean poisoned = target.conditions()
+                .contains(Conditions.POISON.id());
+            int missingHealth = target.health().maximumHealth()
+                - target.health().currentHealth();
+
+            previews.put(targetId, new HealPreview(
+                healValue,
+                poisoned,
+                poisoned ? 0 : Math.min(healValue, missingHealth)
+            ));
+        }
+        return Map.copyOf(previews);
+    }
+
+    private Set<FigureId> previewTargets(
+        TargetPlan plan,
+        FigureTargetSelection selection
+    ) {
+        return switch (selection) {
+            case FigureTargetSelection.FigureTargets figureTargets ->
+                figureTargets.eligibleTargets();
+            case FigureTargetSelection.AreaPlacement areaPlacement -> {
+                if (!(plan instanceof TargetPlan.Area areaPlan)) {
+                    throw new IllegalStateException(
+                        "Area selection requires an area target plan"
+                    );
+                }
+                Set<FigureId> targets = new LinkedHashSet<>();
+                areaPlacement.placements().stream()
+                    .filter(ResolvedAreaPlacement::eligible)
+                    .forEach(placement -> targets.addAll(
+                        resolveAreaTargets(
+                            areaPlan,
+                            placement.affectedHexes()
+                        )
+                    ));
+                yield Set.copyOf(targets);
+            }
+            default -> Set.of();
         };
     }
 
-    private AttackChoice.FigureTargets resolveQuery(
-        AttackTargetPlan.Query plan
+    private FigureTargetSelection.FigureTargets resolveQuery(
+        TargetPlan.Query plan
     ) {
         Set<FigureId> eligibleTargets = new LinkedHashSet<>();
 
@@ -113,7 +257,7 @@ public final class AttackTargetResolver {
             maximum = Math.min(maximum, eligibleTargets.size());
         }
 
-        return new AttackChoice.FigureTargets(
+        return new FigureTargetSelection.FigureTargets(
             eligibleTargets,
             minimum,
             maximum,
@@ -122,8 +266,8 @@ public final class AttackTargetResolver {
         );
     }
 
-    private AttackChoice.AreaPlacement resolveArea(
-        AttackTargetPlan.Area plan
+    private FigureTargetSelection.AreaPlacement resolveArea(
+        TargetPlan.Area plan
     ) {
         Map<AreaPlacementKey, ResolvedAreaPlacement> placements =
             new LinkedHashMap<>();
@@ -161,7 +305,7 @@ public final class AttackTargetResolver {
                     placements.putIfAbsent(
                         new AreaPlacementKey(anchor, affectedHexes),
                         new ResolvedAreaPlacement(
-                            new AttackChoice.AreaPlacementOption(
+                            new FigureTargetSelection.AreaPlacementOption(
                                 anchor,
                                 rotation,
                                 reflected
@@ -175,7 +319,7 @@ public final class AttackTargetResolver {
             }
         }
 
-        return new AttackChoice.AreaPlacement(
+        return new FigureTargetSelection.AreaPlacement(
             List.copyOf(placements.values()),
             plan.placement() instanceof AreaPlacementRule.AroundOrigin ? AreaPlacementControl.LOCKED_TO_ORIGIN : AreaPlacementControl.POINTER_CONTROLLED
         );
@@ -222,13 +366,13 @@ public final class AttackTargetResolver {
 
     private boolean containsEligibleAreaTarget(
         Set<HexPosition> affectedHexes,
-        AttackTargetPlan.Area plan
+        TargetPlan.Area plan
     ) {
         return !resolveAreaTargets(plan, affectedHexes).isEmpty();
     }
 
     List<FigureId> resolveAreaTargets(
-        AttackTargetPlan.Area plan,
+        TargetPlan.Area plan,
         Set<HexPosition> affectedHexes
     ) {
         Objects.requireNonNull(plan, "plan");
@@ -243,16 +387,16 @@ public final class AttackTargetResolver {
             .map(state::figureAt)
             .flatMap(java.util.Optional::stream)
             .filter(figure -> matchesPredicate(plan.targets(), figure))
-            .filter(figure -> matchesLineOfSight(
-                lineOfSight,
-                state.positionOf(figure.id())
-            ))
             .map(Figure::id)
+            .filter(id -> matchesLineOfSight(
+                lineOfSight,
+                state.positionOf(id)
+            ))
             .toList();
     }
 
     private Set<HexPosition> targetableAreaHexes(
-        AttackTargetPlan.Area plan,
+        TargetPlan.Area plan,
         Set<HexPosition> affectedHexes
     ) {
         LineOfSightPolicy lineOfSight = areaLineOfSight(plan);
@@ -272,7 +416,7 @@ public final class AttackTargetResolver {
     }
 
     private static LineOfSightPolicy areaLineOfSight(
-        AttackTargetPlan.Area plan
+        TargetPlan.Area plan
     ) {
         return switch (plan.placement()) {
             case AreaPlacementRule.AroundOrigin ignored ->
@@ -317,10 +461,10 @@ public final class AttackTargetResolver {
     }
 
     private static UnsupportedOperationException unsupported(
-        AttackTargetPlan plan
+        TargetPlan plan
     ) {
         return new UnsupportedOperationException(
-            "Attack target plan is not supported yet: "
+            "Target plan is not supported yet: "
                 + plan.getClass().getSimpleName()
         );
     }
@@ -512,17 +656,17 @@ public final class AttackTargetResolver {
         };
     }
 
-    private HexPosition resolveAttackOrigin(AttackOrigin origin) {
+    private HexPosition resolveAttackOrigin(ActionOrigin origin) {
         return switch (origin) {
-            case AttackOrigin.Actor ignored ->
+            case ActionOrigin.Actor ignored ->
                 state.positionOf(execution.actor());
-            case AttackOrigin.StoredFigure stored ->
+            case ActionOrigin.StoredFigure stored ->
                 state.positionOf(
                     execution.memory().requireFigure(stored.variable())
                 );
-            case AttackOrigin.StoredHex stored ->
+            case ActionOrigin.StoredHex stored ->
                 execution.memory().requireHex(stored.variable());
-            case AttackOrigin.Choose ignored ->
+            case ActionOrigin.Choose ignored ->
                 throw new IllegalStateException(
                     "The attack origin must be chosen before resolving targets"
                 );

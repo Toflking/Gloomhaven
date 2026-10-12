@@ -1,18 +1,17 @@
 package io.github.toflking.gloomhaven.scenarioscreen.interaction;
 
-import io.github.toflking.gloomhaven.rules.ability.attack.targeting.DuplicatePolicy;
-import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetSelectionMode;
 import io.github.toflking.gloomhaven.rules.ability.movement.MovementType;
 import io.github.toflking.gloomhaven.rules.board.HexPosition;
 import io.github.toflking.gloomhaven.rules.board.pathfinding.HexPathfinder;
-import io.github.toflking.gloomhaven.rules.command.ChooseAttackTargetsCommand;
+import io.github.toflking.gloomhaven.rules.command.ChooseFigureTargetsCommand;
 import io.github.toflking.gloomhaven.rules.command.ChooseAttackAreaCommand;
 import io.github.toflking.gloomhaven.rules.command.ChooseMovePathCommand;
 import io.github.toflking.gloomhaven.rules.event.UndoPerformedEvent;
-import io.github.toflking.gloomhaven.rules.execution.attack.AreaPlacementControl;
-import io.github.toflking.gloomhaven.rules.execution.attack.ResolvedAreaPlacement;
-import io.github.toflking.gloomhaven.rules.execution.choice.PendingAttackChoice;
-import io.github.toflking.gloomhaven.rules.execution.choice.PendingAreaAttackChoice;
+import io.github.toflking.gloomhaven.rules.execution.attack.FigureTargetSelection;
+import io.github.toflking.gloomhaven.rules.execution.attack.preview.AttackPreview;
+import io.github.toflking.gloomhaven.rules.execution.attack.preview.HealPreview;
+import io.github.toflking.gloomhaven.rules.execution.choice.PendingFigureTargetChoice;
+import io.github.toflking.gloomhaven.rules.execution.choice.PendingAreaChoice;
 import io.github.toflking.gloomhaven.rules.execution.choice.PendingChoice;
 import io.github.toflking.gloomhaven.rules.execution.choice.PendingMoveChoice;
 import io.github.toflking.gloomhaven.rules.figure.Figure;
@@ -20,6 +19,7 @@ import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioState;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -47,7 +47,11 @@ public final class ScenarioInteractionController {
                 updateMovementPreview(clickedHex, movement);
             case AttackTargetInteraction targeting ->
                 addToTargetSelection(clickedHex, targeting);
-            case AreaPlacementInteraction area ->
+            case AttackAreaPlacementInteraction area ->
+                updateAreaPlacement(clickedHex, area);
+            case HealTargetInteraction targeting ->
+                addToTargetSelection(clickedHex, targeting);
+            case HealAreaPlacementInteraction area ->
                 updateAreaPlacement(clickedHex, area);
         }
     }
@@ -58,7 +62,11 @@ public final class ScenarioInteractionController {
             case MovePathInteraction movement -> {}
             case AttackTargetInteraction targeting ->
                 removeFromTargetSelection(clickedHex, targeting);
-            case AreaPlacementInteraction area ->
+            case AttackAreaPlacementInteraction area ->
+                area.unlockAt(clickedHex);
+            case HealTargetInteraction targeting ->
+                removeFromTargetSelection(clickedHex, targeting);
+            case HealAreaPlacementInteraction area ->
                 area.unlockAt(clickedHex);
         }
     }
@@ -71,48 +79,88 @@ public final class ScenarioInteractionController {
         interactionState = new MovePathInteraction(amount, actor, type);
     }
 
-    public void beginTargetChoice(
-        FigureId attacker,
-        Set<FigureId> eligibleTargets,
-        int minimumTargets,
-        int maximumTargets,
-        DuplicatePolicy duplicates,
-        TargetSelectionMode selectionMode
+    public void beginAttackTargetChoice(
+        FigureId attackerId,
+        FigureTargetSelection.FigureTargets selection,
+        Map<FigureId, AttackPreview> previews
     ) {
         interactionState = new AttackTargetInteraction(
-            attacker,
-            eligibleTargets,
-            minimumTargets,
-            maximumTargets,
-            duplicates,
-            selectionMode
+            attackerId,
+            selection,
+            previews
         );
-        switch (selectionMode) {
+        switch (selection.selectionMode()) {
             case FIXED ->  selectionOption = SelectionOption.AUTOMATIC;
             case MANUAL -> selectionOption = SelectionOption.MANUAL;
         }
     }
 
-    public void beginAreaPlacementChoice(
+    public void beginAttackAreaPlacementChoice(
         FigureId attacker,
-        List<ResolvedAreaPlacement> placements,
-        AreaPlacementControl control
+        FigureTargetSelection.AreaPlacement selection,
+        Map<FigureId, AttackPreview> previews
     ) {
-        interactionState = new AreaPlacementInteraction(
+        interactionState = new AttackAreaPlacementInteraction(
             attacker,
-            placements,
-            control
+            selection,
+            previews
+        );
+    }
+
+    public void beginHealTargetChoice(
+        FigureId attackerId,
+        FigureTargetSelection.FigureTargets selection,
+        Map<FigureId, HealPreview> previews
+    ) {
+        interactionState = new HealTargetInteraction(
+            attackerId,
+            selection,
+            previews
+        );
+        switch (selection.selectionMode()) {
+            case FIXED ->  selectionOption = SelectionOption.AUTOMATIC;
+            case MANUAL -> selectionOption = SelectionOption.MANUAL;
+        }
+    }
+
+    public void beginHealAreaPlacementChoice(
+        FigureId attacker,
+        FigureTargetSelection.AreaPlacement selection,
+        Map<FigureId, HealPreview> previews
+    ) {
+        interactionState = new HealAreaPlacementInteraction(
+            attacker,
+            selection,
+            previews
         );
     }
 
     public void handleBoardHover(HexPosition hoveredHex) {
-        if (interactionState instanceof AreaPlacementInteraction area) {
-            area.previewAt(hoveredHex);
+        FigureId hoveredFigureId = hoveredHex == null
+            ? null
+            : scenarioState.figureAt(hoveredHex)
+                .map(Figure::id)
+                .orElse(null);
+
+        switch (interactionState) {
+            case AttackTargetInteraction targeting ->
+                targeting.hoverTarget(hoveredFigureId);
+            case HealTargetInteraction targeting ->
+                targeting.hoverTarget(hoveredFigureId);
+            case AttackAreaPlacementInteraction area ->
+                area.previewAt(hoveredHex);
+            case HealAreaPlacementInteraction area ->
+                area.previewAt(hoveredHex);
+            default -> {
+            }
         }
     }
 
     public void rotateAreaPlacement() {
-        if (interactionState instanceof AreaPlacementInteraction area) {
+        if (interactionState instanceof AttackAreaPlacementInteraction area) {
+            area.rotate();
+        } else if (interactionState
+            instanceof HealAreaPlacementInteraction area) {
             area.rotate();
         }
     }
@@ -137,13 +185,23 @@ public final class ScenarioInteractionController {
             return;
         }
 
-        if (pendingChoice instanceof PendingAttackChoice attack) {
+        if (pendingChoice instanceof PendingFigureTargetChoice.Attack attack) {
             restoreAttackChoice(event, attack);
             return;
         }
 
-        if (pendingChoice instanceof PendingAreaAttackChoice area) {
+        if (pendingChoice instanceof PendingFigureTargetChoice.Heal heal) {
+            restoreHealChoice(event, heal);
+            return;
+        }
+
+        if (pendingChoice instanceof PendingAreaChoice.Attack area) {
             restoreAreaChoice(event, area);
+            return;
+        }
+
+        if (pendingChoice instanceof PendingAreaChoice.Heal area) {
+            restoreHealAreaChoice(event, area);
             return;
         }
 
@@ -167,51 +225,71 @@ public final class ScenarioInteractionController {
     }
 
     public List<HexPosition> eligibleTargetHexes() {
-        if (!(interactionState instanceof AttackTargetInteraction attack)) {
-            return List.of();
+        if (interactionState instanceof AttackTargetInteraction attack) {
+            return attack.getEligibleTargets().stream()
+                .map(scenarioState::positionOf)
+                .toList();
         }
-
-        return attack.getEligibleTargets().stream()
-            .map(scenarioState::positionOf)
-            .toList();
+        if (interactionState instanceof HealTargetInteraction heal) {
+            return heal.getEligibleTargets().stream()
+                .map(scenarioState::positionOf)
+                .toList();
+        }
+        return List.of();
     }
 
     public List<HexPosition> selectedTargetHexes() {
-        if (!(interactionState instanceof AttackTargetInteraction attack)) {
-            return List.of();
+        if (interactionState instanceof AttackTargetInteraction attack) {
+            return attack.getSelectedTargets().stream()
+                .map(scenarioState::positionOf)
+                .toList();
         }
-
-        return attack.getSelectedTargets().stream()
-            .map(scenarioState::positionOf)
-            .toList();
+        if (interactionState instanceof HealTargetInteraction heal) {
+            return heal.getSelectedTargets().stream()
+                .map(scenarioState::positionOf)
+                .toList();
+        }
+        return List.of();
     }
 
     public Set<HexPosition> eligibleAreaAnchors() {
-        if (!(interactionState instanceof AreaPlacementInteraction area)) {
-            return Set.of();
+        if (interactionState instanceof AttackAreaPlacementInteraction area) {
+            return area.eligibleAnchors();
         }
-        return area.eligibleAnchors();
+        if (interactionState instanceof HealAreaPlacementInteraction area) {
+            return area.eligibleAnchors();
+        }
+        return Set.of();
     }
 
     public Set<HexPosition> targetableAreaHexes() {
-        if (!(interactionState instanceof AreaPlacementInteraction area)) {
-            return Set.of();
+        if (interactionState instanceof AttackAreaPlacementInteraction area) {
+            return area.targetableHexes();
         }
-        return area.targetableHexes();
+        if (interactionState instanceof HealAreaPlacementInteraction area) {
+            return area.targetableHexes();
+        }
+        return Set.of();
     }
 
     public Set<HexPosition> untargetableAreaHexes() {
-        if (!(interactionState instanceof AreaPlacementInteraction area)) {
-            return Set.of();
+        if (interactionState instanceof AttackAreaPlacementInteraction area) {
+            return area.untargetableHexes();
         }
-        return area.untargetableHexes();
+        if (interactionState instanceof HealAreaPlacementInteraction area) {
+            return area.untargetableHexes();
+        }
+        return Set.of();
     }
 
     public Set<HexPosition> invalidAreaPreviewHexes() {
-        if (!(interactionState instanceof AreaPlacementInteraction area)) {
-            return Set.of();
+        if (interactionState instanceof AttackAreaPlacementInteraction area) {
+            return area.invalidPreviewHexes();
         }
-        return area.invalidPreviewHexes();
+        if (interactionState instanceof HealAreaPlacementInteraction area) {
+            return area.invalidPreviewHexes();
+        }
+        return Set.of();
     }
 
     private void updateMovementPreview(
@@ -268,6 +346,44 @@ public final class ScenarioInteractionController {
         }
     }
 
+    private void addToTargetSelection(
+        HexPosition clickedHex,
+        HealTargetInteraction targeting
+    ) {
+        if (selectionOption == SelectionOption.AUTOMATIC) {
+            return;
+        }
+
+        Figure selectedFigure =
+            scenarioState.figureAt(clickedHex).orElse(null);
+        if (selectedFigure == null
+            || !targeting.getEligibleTargets().contains(
+                selectedFigure.id()
+            )) {
+            return;
+        }
+
+        List<FigureId> selectedTargets = targeting.getSelectedTargets();
+        switch (targeting.getDuplicates()) {
+            case DISTINCT_TARGETS -> {
+                if (selectedTargets.contains(selectedFigure.id())) {
+                    selectedTargets.remove(selectedFigure.id());
+                    return;
+                }
+                if (selectedTargets.size() >= targeting.getMaximumTargets()) {
+                    return;
+                }
+                selectedTargets.add(selectedFigure.id());
+            }
+            case REPEATED_TARGETS_ALLOWED -> {
+                if (selectedTargets.size() >= targeting.getMaximumTargets()) {
+                    return;
+                }
+                selectedTargets.add(selectedFigure.id());
+            }
+        }
+    }
+
     public void removeFromTargetSelection(HexPosition clickedHex, AttackTargetInteraction targeting) {
         if (selectionOption == SelectionOption.AUTOMATIC) {
             return;
@@ -284,9 +400,33 @@ public final class ScenarioInteractionController {
         selectedTargets.remove(selectedFigure.id());
     }
 
+    private void removeFromTargetSelection(
+        HexPosition clickedHex,
+        HealTargetInteraction targeting
+    ) {
+        if (selectionOption == SelectionOption.AUTOMATIC) {
+            return;
+        }
+
+        Figure selectedFigure =
+            scenarioState.figureAt(clickedHex).orElse(null);
+        if (selectedFigure == null) {
+            return;
+        }
+
+        targeting.getSelectedTargets().remove(selectedFigure.id());
+    }
+
     private void updateAreaPlacement(
         HexPosition clickedHex,
-        AreaPlacementInteraction area
+        AttackAreaPlacementInteraction area
+    ) {
+        area.placeAt(clickedHex);
+    }
+
+    private void updateAreaPlacement(
+        HexPosition clickedHex,
+        HealAreaPlacementInteraction area
     ) {
         area.placeAt(clickedHex);
     }
@@ -310,18 +450,15 @@ public final class ScenarioInteractionController {
 
     private void restoreAttackChoice(
         UndoPerformedEvent event,
-        PendingAttackChoice attack
+        PendingFigureTargetChoice.Attack attack
     ) {
         AttackTargetInteraction restored = new AttackTargetInteraction(
-            attack.attackerId(),
-            attack.eligibleTargets(),
-            attack.minimumTargets(),
-            attack.maximumTargets(),
-            attack.duplicates(),
-            attack.selectionMode()
+            attack.actorId(),
+            attack.selection(),
+            attack.previews()
         );
 
-        if (event.undoneCommand() instanceof ChooseAttackTargetsCommand(List<FigureId> targets)) {
+        if (event.undoneCommand() instanceof ChooseFigureTargetsCommand(List<FigureId> targets)) {
             restored.replaceSelectedTargets(targets);
         }
 
@@ -330,13 +467,32 @@ public final class ScenarioInteractionController {
 
     private void restoreAreaChoice(
         UndoPerformedEvent event,
-        PendingAreaAttackChoice area
+        PendingAreaChoice.Attack area
     ) {
-        AreaPlacementInteraction restored =
-            new AreaPlacementInteraction(
-                area.attackerId(),
-                area.placements(),
-                area.control()
+        AttackAreaPlacementInteraction restored =
+            new AttackAreaPlacementInteraction(
+                area.actorId(),
+                area.selection(),
+                area.previews()
+            );
+
+        if (event.undoneCommand()
+            instanceof ChooseAttackAreaCommand areaCommand) {
+            restored.restorePlacement(areaCommand.placement());
+        }
+
+        interactionState = restored;
+    }
+
+    private void restoreHealAreaChoice(
+        UndoPerformedEvent event,
+        PendingAreaChoice.Heal area
+    ) {
+        HealAreaPlacementInteraction restored =
+            new HealAreaPlacementInteraction(
+                area.actorId(),
+                area.selection(),
+                area.previews()
             );
 
         if (event.undoneCommand()
@@ -354,5 +510,22 @@ public final class ScenarioInteractionController {
 
     public SelectionOption selectionOption() {
         return selectionOption;
+    }
+
+    private void restoreHealChoice(
+        UndoPerformedEvent event,
+        PendingFigureTargetChoice.Heal heal
+    ) {
+        HealTargetInteraction restored = new HealTargetInteraction(
+            heal.actorId(),
+            heal.selection(),
+            heal.previews()
+        );
+
+        if (event.undoneCommand() instanceof ChooseFigureTargetsCommand(List<FigureId> targets)) {
+            restored.replaceSelectedTargets(targets);
+        }
+
+        interactionState = restored;
     }
 }

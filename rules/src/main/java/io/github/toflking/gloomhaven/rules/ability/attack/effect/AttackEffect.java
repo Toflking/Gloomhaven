@@ -12,13 +12,13 @@ public sealed interface AttackEffect
     AttackEffect.ExecuteAfterAttack,
     AttackEffect.Contextual {
 
-    AttackEffectTiming timing();
+    TargetEffectTiming timing();
 
     boolean optional();
 
     record Condition(
         FigurePredicate.ConditionId condition,
-        AttackEffectTiming timing,
+        TargetEffectTiming timing,
         boolean optional
     ) implements AttackEffect {
 
@@ -31,7 +31,7 @@ public sealed interface AttackEffect
     record ForcedMovement(
         ForcedMovementType type,
         IntExpression amount,
-        AttackEffectTiming timing,
+        TargetEffectTiming timing,
         boolean optional
     ) implements AttackEffect {
 
@@ -44,7 +44,7 @@ public sealed interface AttackEffect
 
     record Pierce(
         IntExpression amount,
-        AttackEffectTiming timing,
+        TargetEffectTiming timing,
         boolean optional
     ) implements AttackEffect {
 
@@ -57,7 +57,7 @@ public sealed interface AttackEffect
     record ExecuteAfterAttack(
         FigurePredicate eligibleTargets,
         IntExpression maximumRemainingHealth,
-        AttackEffectTiming timing,
+        TargetEffectTiming timing,
         boolean optional
     ) implements AttackEffect {
 
@@ -76,7 +76,7 @@ public sealed interface AttackEffect
 
     record Contextual(
         AttackEffectId id,
-        AttackEffectTiming timing,
+        TargetEffectTiming timing,
         boolean optional
     ) implements AttackEffect {
 
@@ -84,13 +84,6 @@ public sealed interface AttackEffect
             Objects.requireNonNull(id, "id");
             Objects.requireNonNull(timing, "timing");
         }
-    }
-
-    enum AttackEffectTiming {
-        BEFORE_DAMAGE,
-        DURING_DAMAGE,
-        AFTER_DAMAGE,
-        AFTER_ATTACK
     }
 
     enum ForcedMovementType {

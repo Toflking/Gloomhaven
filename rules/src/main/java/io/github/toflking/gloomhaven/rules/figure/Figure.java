@@ -74,4 +74,14 @@ public final class Figure {
 
         health.setCurrentHealth(Math.max(0, health.currentHealth() - amount));
     }
+
+    public void heal(int amount) {
+        if (amount < 0) {
+            throw new IllegalArgumentException(
+                "Heal cannot be over maximum"
+            );
+        }
+
+        health.setCurrentHealth(Math.min(health.maximumHealth, health.currentHealth() + amount));
+    }
 }

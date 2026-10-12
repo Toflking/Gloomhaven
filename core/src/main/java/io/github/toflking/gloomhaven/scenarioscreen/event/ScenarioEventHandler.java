@@ -37,22 +37,30 @@ public final class ScenarioEventHandler {
                     event.actor(),
                     event.type()
                 );
-            case TargetChoiceRequestedEvent event ->
-                interactionController.beginTargetChoice(
-                    event.attackerId(),
-                    event.eligibleTargets(),
-                    event.minimumTargets(),
-                    event.maximumTargets(),
-                    event.duplicates(),
-                    event.selectionMode()
+            case AttackTargetChoiceRequestedEvent event ->
+                interactionController.beginAttackTargetChoice(
+                    event.actorId(),
+                    event.selection(),
+                    event.previews()
                 );
-            case AreaPlacementRequestedEvent event -> {
-                interactionController.beginAreaPlacementChoice(
-                    event.attackerId(),
-                    event.placements(),
-                    event.control()
+            case AttackAreaPlacementRequestedEvent event ->
+                interactionController.beginAttackAreaPlacementChoice(
+                    event.actorId(),
+                    event.selection(),
+                    event.previews()
                 );
-            }
+            case HealTargetChoiceRequestedEvent event ->
+                interactionController.beginHealTargetChoice(
+                    event.actorId(),
+                    event.selection(),
+                    event.previews()
+                );
+            case HealAreaPlacementRequestedEvent event ->
+                interactionController.beginHealAreaPlacementChoice(
+                    event.actorId(),
+                    event.selection(),
+                    event.previews()
+                );
             case UndoPerformedEvent event ->
                 interactionController.restoreAfterUndo(event);
             case ActionFinishedEvent ignored ->

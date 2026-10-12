@@ -2,7 +2,7 @@ package io.github.toflking.gloomhaven.rules.engine;
 
 import io.github.toflking.gloomhaven.rules.ability.attack.AttackAbility;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AreaPlacementRule;
-import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AttackTargetPlan;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetPlan;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AttackTargetPlans;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.Cardinality;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.DuplicatePolicy;
@@ -17,14 +17,14 @@ import io.github.toflking.gloomhaven.rules.card.AbilitySource;
 import io.github.toflking.gloomhaven.rules.card.CardAction;
 import io.github.toflking.gloomhaven.rules.card.CardDefinition;
 import io.github.toflking.gloomhaven.rules.card.CardHalf;
-import io.github.toflking.gloomhaven.rules.command.ChooseAttackTargetsCommand;
+import io.github.toflking.gloomhaven.rules.command.ChooseFigureTargetsCommand;
 import io.github.toflking.gloomhaven.rules.command.ChooseAttackAreaCommand;
 import io.github.toflking.gloomhaven.rules.command.PlayCardActionCommand;
 import io.github.toflking.gloomhaven.rules.content.cards.CardCatalog;
 import io.github.toflking.gloomhaven.rules.event.ActionFinishedEvent;
-import io.github.toflking.gloomhaven.rules.event.AreaPlacementRequestedEvent;
+import io.github.toflking.gloomhaven.rules.event.AttackAreaPlacementRequestedEvent;
 import io.github.toflking.gloomhaven.rules.event.FigureDamagedEvent;
-import io.github.toflking.gloomhaven.rules.event.TargetChoiceRequestedEvent;
+import io.github.toflking.gloomhaven.rules.event.AttackTargetChoiceRequestedEvent;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import io.github.toflking.gloomhaven.rules.board.HexBoard;
 import io.github.toflking.gloomhaven.rules.board.HexPattern;
@@ -70,17 +70,18 @@ class ScenarioEngineAttackTest {
             new PlayCardActionCommand(SOURCE)
         );
 
-        TargetChoiceRequestedEvent requested =
+        AttackTargetChoiceRequestedEvent requested =
             assertInstanceOf(
-                TargetChoiceRequestedEvent.class,
+                AttackTargetChoiceRequestedEvent.class,
                 playResult.events().getFirst()
             );
-        assertEquals(Set.of(TARGET), requested.eligibleTargets());
-        assertEquals(1, requested.maximumTargets());
-        assertEquals(TargetSelectionMode.MANUAL, requested.selectionMode());
+        assertEquals(Set.of(TARGET), requested.selection().eligibleTargets());
+        assertEquals(1, requested.selection().maximumTargets());
+        assertEquals(TargetSelectionMode.MANUAL, requested.selection().selectionMode());
+        assertEquals(3, requested.previews().get(TARGET).projectedDamage());
 
         CommandResult attackResult = engine.execute(
-            new ChooseAttackTargetsCommand(List.of(TARGET))
+            new ChooseFigureTargetsCommand(List.of(TARGET))
         );
 
         FigureDamagedEvent damaged = assertInstanceOf(
@@ -99,8 +100,8 @@ class ScenarioEngineAttackTest {
     @Test
     void evaluatesPerAttackValuesAndPreservesDuplicateTargets() {
         ScenarioState state = scenario();
-        AttackTargetPlan.Query targets =
-            new AttackTargetPlan.Query(
+        TargetPlan.Query targets =
+            new TargetPlan.Query(
                 AttackTargetPlans
                     .singleEnemyWithinRange(1)
                     .candidates(),
@@ -123,7 +124,7 @@ class ScenarioEngineAttackTest {
 
         engine.execute(new PlayCardActionCommand(SOURCE));
         CommandResult result = engine.execute(
-            new ChooseAttackTargetsCommand(List.of(TARGET, TARGET))
+            new ChooseFigureTargetsCommand(List.of(TARGET, TARGET))
         );
 
         List<Integer> damage = result.events()
@@ -136,6 +137,92 @@ class ScenarioEngineAttackTest {
         assertEquals(List.of(3, 2), damage);
         assertEquals(5, state.figure(TARGET).health().currentHealth());
         assertTrue(result.accepted());
+    }
+
+    @Test
+    void freezesAbilityStartValuesBeforeTargetSelection() {
+        ScenarioState state = scenario();
+        state.damageFigure(ATTACKER, 2);
+        AbilityValue amount = new AbilityValue(
+            new IntExpression.Add(
+                new IntExpression.FigureStatValue(
+                    new FigureReference.Actor(),
+                    IntExpression.FigureStat.MISSING_HEALTH
+                ),
+                new IntExpression.Constant(1)
+            ),
+            EvaluationMoment.ABILITY_START
+        );
+        ScenarioEngine engine = engine(
+            state,
+            new AttackAbility(
+                amount,
+                AttackTargetPlans.singleEnemyWithinRange(1)
+            )
+        );
+
+        CommandResult playResult = engine.execute(
+            new PlayCardActionCommand(SOURCE)
+        );
+        AttackTargetChoiceRequestedEvent requested = assertInstanceOf(
+            AttackTargetChoiceRequestedEvent.class,
+            playResult.events().getFirst()
+        );
+        assertEquals(3, requested.previews().get(TARGET).projectedDamage());
+
+        state.damageFigure(ATTACKER, 2);
+        CommandResult attackResult = engine.execute(
+            new ChooseFigureTargetsCommand(List.of(TARGET))
+        );
+
+        FigureDamagedEvent damaged = assertInstanceOf(
+            FigureDamagedEvent.class,
+            attackResult.events().getFirst()
+        );
+        assertEquals(3, damaged.amount());
+    }
+
+    @Test
+    void previewsPostSelectionValuesWithoutCachingThemEarly() {
+        ScenarioState state = scenario();
+        state.damageFigure(ATTACKER, 2);
+        AbilityValue amount = new AbilityValue(
+            new IntExpression.Add(
+                new IntExpression.FigureStatValue(
+                    new FigureReference.Actor(),
+                    IntExpression.FigureStat.MISSING_HEALTH
+                ),
+                new IntExpression.Constant(1)
+            ),
+            EvaluationMoment.AFTER_TARGET_SELECTION
+        );
+        ScenarioEngine engine = engine(
+            state,
+            new AttackAbility(
+                amount,
+                AttackTargetPlans.singleEnemyWithinRange(1)
+            )
+        );
+
+        CommandResult playResult = engine.execute(
+            new PlayCardActionCommand(SOURCE)
+        );
+        AttackTargetChoiceRequestedEvent requested = assertInstanceOf(
+            AttackTargetChoiceRequestedEvent.class,
+            playResult.events().getFirst()
+        );
+        assertEquals(3, requested.previews().get(TARGET).projectedDamage());
+
+        state.damageFigure(ATTACKER, 2);
+        CommandResult attackResult = engine.execute(
+            new ChooseFigureTargetsCommand(List.of(TARGET))
+        );
+
+        FigureDamagedEvent damaged = assertInstanceOf(
+            FigureDamagedEvent.class,
+            attackResult.events().getFirst()
+        );
+        assertEquals(5, damaged.amount());
     }
 
     @Test
@@ -153,16 +240,16 @@ class ScenarioEngineAttackTest {
             new PlayCardActionCommand(SOURCE)
         );
 
-        TargetChoiceRequestedEvent requested = assertInstanceOf(
-            TargetChoiceRequestedEvent.class,
+        AttackTargetChoiceRequestedEvent requested = assertInstanceOf(
+            AttackTargetChoiceRequestedEvent.class,
             playResult.events().getFirst()
         );
-        assertEquals(TargetSelectionMode.FIXED, requested.selectionMode());
-        assertEquals(Set.of(TARGET), requested.eligibleTargets());
+        assertEquals(TargetSelectionMode.FIXED, requested.selection().selectionMode());
+        assertEquals(Set.of(TARGET), requested.selection().eligibleTargets());
         assertEquals(10, state.figure(TARGET).health().currentHealth());
 
         CommandResult attackResult = engine.execute(
-            new ChooseAttackTargetsCommand(List.of(TARGET))
+            new ChooseFigureTargetsCommand(List.of(TARGET))
         );
 
         assertTrue(attackResult.accepted());
@@ -172,7 +259,7 @@ class ScenarioEngineAttackTest {
     @Test
     void resolvesAndExecutesTheChosenAreaPlacement() {
         ScenarioState state = scenario();
-        AttackTargetPlan.Area targeting = new AttackTargetPlan.Area(
+        TargetPlan.Area targeting = new TargetPlan.Area(
             new HexPattern(List.of(new HexPosition(1, 0))),
             new AreaPlacementRule.AroundOrigin(false, false),
             new FigurePredicate.Relationship(
@@ -188,11 +275,11 @@ class ScenarioEngineAttackTest {
         CommandResult playResult = engine.execute(
             new PlayCardActionCommand(SOURCE)
         );
-        AreaPlacementRequestedEvent requested = assertInstanceOf(
-            AreaPlacementRequestedEvent.class,
+        AttackAreaPlacementRequestedEvent requested = assertInstanceOf(
+            AttackAreaPlacementRequestedEvent.class,
             playResult.events().getFirst()
         );
-        var placement = requested.placements()
+        var placement = requested.selection().placements()
             .getFirst();
 
         CommandResult attackResult = engine.execute(

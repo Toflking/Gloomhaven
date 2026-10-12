@@ -8,17 +8,17 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-public sealed interface AttackTargetPlan
-    permits AttackTargetPlan.Query,
-    AttackTargetPlan.Area,
-    AttackTargetPlan.PrimaryAndDerived,
-    AttackTargetPlan.Chain {
+public sealed interface TargetPlan
+    permits TargetPlan.Query,
+    TargetPlan.Area,
+    TargetPlan.PrimaryAndDerived,
+    TargetPlan.Chain {
 
     record Query(
         TargetQuery candidates,
         Cardinality cardinality,
         DuplicatePolicy duplicates
-    ) implements AttackTargetPlan {
+    ) implements TargetPlan {
 
         public Query {
             Objects.requireNonNull(candidates, "candidates");
@@ -31,7 +31,7 @@ public sealed interface AttackTargetPlan
         HexPattern pattern,
         AreaPlacementRule placement,
         FigurePredicate targets
-    ) implements AttackTargetPlan {
+    ) implements TargetPlan {
 
         public Area {
             Objects.requireNonNull(pattern, "pattern");
@@ -47,7 +47,7 @@ public sealed interface AttackTargetPlan
         ExecutionVariableId pathVariable,
         TargetQuery derivedTargets,
         DuplicatePolicy duplicates
-    ) implements AttackTargetPlan {
+    ) implements TargetPlan {
 
         public PrimaryAndDerived {
             Objects.requireNonNull(primaryTarget, "primaryTarget");
@@ -65,7 +65,7 @@ public sealed interface AttackTargetPlan
     record Chain(
         List<ChainStep> steps,
         DuplicatePolicy duplicates
-    ) implements AttackTargetPlan {
+    ) implements TargetPlan {
 
         public Chain {
             steps = List.copyOf(steps);

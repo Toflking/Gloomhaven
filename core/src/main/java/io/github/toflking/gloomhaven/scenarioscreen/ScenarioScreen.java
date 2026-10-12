@@ -152,7 +152,12 @@ public final class ScenarioScreen extends ScreenAdapter {
         );
         figureRenderer.render(scenarioState, camera);
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);
-        healthBarRenderer.render(scenarioState, camera, viewport);
+        healthBarRenderer.render(
+            scenarioState,
+            camera,
+            viewport,
+            interactionController.interactionState()
+        );
 
         hud.update(
             scenarioState,

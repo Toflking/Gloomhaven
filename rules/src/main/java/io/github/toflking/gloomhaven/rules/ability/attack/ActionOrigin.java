@@ -5,17 +5,17 @@ import io.github.toflking.gloomhaven.rules.ability.value.ExecutionVariableId;
 import java.util.List;
 import java.util.Objects;
 
-public sealed interface AttackOrigin
-    permits AttackOrigin.Actor,
-    AttackOrigin.StoredFigure,
-    AttackOrigin.StoredHex,
-    AttackOrigin.Choose {
+public sealed interface ActionOrigin
+    permits ActionOrigin.Actor,
+    ActionOrigin.StoredFigure,
+    ActionOrigin.StoredHex,
+    ActionOrigin.Choose {
 
-    record Actor() implements AttackOrigin {
+    record Actor() implements ActionOrigin {
     }
 
     record StoredFigure(ExecutionVariableId variable)
-        implements AttackOrigin {
+        implements ActionOrigin {
 
         public StoredFigure {
             Objects.requireNonNull(variable, "variable");
@@ -23,15 +23,15 @@ public sealed interface AttackOrigin
     }
 
     record StoredHex(ExecutionVariableId variable)
-        implements AttackOrigin {
+        implements ActionOrigin {
 
         public StoredHex {
             Objects.requireNonNull(variable, "variable");
         }
     }
 
-    record Choose(List<AttackOrigin> options)
-        implements AttackOrigin {
+    record Choose(List<ActionOrigin> options)
+        implements ActionOrigin {
 
         public Choose {
             options = List.copyOf(options);

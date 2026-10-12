@@ -2,44 +2,40 @@ package io.github.toflking.gloomhaven.scenarioscreen.interaction;
 
 import io.github.toflking.gloomhaven.rules.board.HexPosition;
 import io.github.toflking.gloomhaven.rules.execution.attack.AreaPlacementControl;
-import io.github.toflking.gloomhaven.rules.execution.attack.AttackChoice;
+import io.github.toflking.gloomhaven.rules.execution.attack.FigureTargetSelection;
 import io.github.toflking.gloomhaven.rules.execution.attack.ResolvedAreaPlacement;
+import io.github.toflking.gloomhaven.rules.execution.attack.preview.HealPreview;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
-public final class AreaPlacementInteraction
+public final class HealAreaPlacementInteraction
     implements ScenarioInteractionState {
 
     private final FigureId attackerId;
     private final List<ResolvedAreaPlacement> placements;
     private final AreaPlacementControl control;
     private final List<Orientation> orientations;
+    private final Map<FigureId, HealPreview> previews;
 
     private HexPosition hoveredAnchor;
     private HexPosition lockedAnchor;
     private ResolvedAreaPlacement currentPlacement;
     private Orientation preferredOrientation;
 
-    public AreaPlacementInteraction(
+    public HealAreaPlacementInteraction(
         FigureId attackerId,
-        List<ResolvedAreaPlacement> placements,
-        AreaPlacementControl control
+        FigureTargetSelection.AreaPlacement selection,
+        Map<FigureId, HealPreview> previews
     ) {
-        this.attackerId = Objects.requireNonNull(
-            attackerId,
-            "attackerId"
-        );
-        this.placements = List.copyOf(placements);
-        this.control = Objects.requireNonNull(control, "control");
+        this.attackerId = Objects.requireNonNull(attackerId, "actorId");
+        this.placements = List.copyOf(selection.placements());
+        this.control = Objects.requireNonNull(selection.control(), "control");
         orientations = this.placements.stream()
             .map(placement -> Orientation.from(placement.option()))
             .distinct()
             .toList();
+        this.previews = Map.copyOf(previews);
         preferredOrientation = orientations.isEmpty()
             ? new Orientation(0, false)
             : orientations.getFirst();
@@ -110,7 +106,7 @@ public final class AreaPlacementInteraction
     }
 
     public void restorePlacement(
-        AttackChoice.AreaPlacementOption option
+        FigureTargetSelection.AreaPlacementOption option
     ) {
         placements.stream()
             .filter(placement -> placement.option().equals(option))
@@ -150,13 +146,26 @@ public final class AreaPlacementInteraction
         return placements;
     }
 
+    public HealPreview previewFor(
+        FigureId figureId,
+        HexPosition figurePosition
+    ) {
+        if (currentPlacement == null
+            || !currentPlacement.eligible()
+            || !currentPlacement.targetableHexes().contains(figurePosition)) {
+            return null;
+        }
+
+        return previews.get(figureId);
+    }
+
     public Set<HexPosition> eligibleAnchors() {
         Set<HexPosition> result = new LinkedHashSet<>();
         placements.stream()
             .filter(ResolvedAreaPlacement::eligible)
             .forEach(placement ->
-            result.add(placement.option().anchor())
-        );
+                result.add(placement.option().anchor())
+            );
         return Set.copyOf(result);
     }
 
@@ -242,7 +251,7 @@ public final class AreaPlacementInteraction
 
     private record Orientation(int rotation, boolean reflected) {
         private static Orientation from(
-            AttackChoice.AreaPlacementOption option
+            FigureTargetSelection.AreaPlacementOption option
         ) {
             return new Orientation(
                 option.clockwiseRotations(),
@@ -251,3 +260,4 @@ public final class AreaPlacementInteraction
         }
     }
 }
+

@@ -1,6 +1,6 @@
 package io.github.toflking.gloomhaven.rules.ability.attack;
 
-import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AttackTargetPlan;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetPlan;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.Cardinality;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.DuplicatePolicy;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.FigurePredicate;
@@ -29,7 +29,7 @@ class AttackModelTest {
         ExecutionVariableId damageSuffered =
             new ExecutionVariableId("damage-suffered");
 
-        AttackTargetPlan.Query targeting = new AttackTargetPlan.Query(
+        TargetPlan.Query targeting = new TargetPlan.Query(
             enemiesWithinRange(
                 new TargetAnchor.AttackOrigin(),
                 new IntExpression.Constant(1)
@@ -48,7 +48,7 @@ class AttackModelTest {
         Cardinality.ChooseUpTo cardinality =
             assertInstanceOf(
                 Cardinality.ChooseUpTo.class,
-                ((AttackTargetPlan.Query) ability.targeting()).cardinality()
+                ((TargetPlan.Query) ability.targeting()).cardinality()
             );
         assertEquals(
             new IntExpression.Variable(damageSuffered),
@@ -63,9 +63,9 @@ class AttackModelTest {
         ExecutionVariableId path =
             new ExecutionVariableId("attack-path");
 
-        AttackTargetPlan.PrimaryAndDerived targeting =
-            new AttackTargetPlan.PrimaryAndDerived(
-                new AttackTargetPlan.Query(
+        TargetPlan.PrimaryAndDerived targeting =
+            new TargetPlan.PrimaryAndDerived(
+                new TargetPlan.Query(
                     enemiesWithinRange(
                         new TargetAnchor.AttackOrigin(),
                         new IntExpression.Constant(4)
@@ -109,10 +109,10 @@ class AttackModelTest {
             EvaluationMoment.PER_ATTACK
         );
 
-        AttackTargetPlan.Chain targeting =
-            new AttackTargetPlan.Chain(
+        TargetPlan.Chain targeting =
+            new TargetPlan.Chain(
                 List.of(
-                    new AttackTargetPlan.ChainStep(
+                    new TargetPlan.ChainStep(
                         enemiesWithinRange(
                             new TargetAnchor.AttackOrigin(),
                             new IntExpression.Constant(3)
@@ -120,7 +120,7 @@ class AttackModelTest {
                         Optional.empty(),
                         false
                     ),
-                    new AttackTargetPlan.ChainStep(
+                    new TargetPlan.ChainStep(
                         enemiesWithinRange(
                             new TargetAnchor.PreviousTarget(),
                             new IntExpression.Constant(2)
@@ -146,14 +146,14 @@ class AttackModelTest {
 
     @Test
     void representsAlternativeOriginAndRepeatedTargets() {
-        AttackOrigin origin = new AttackOrigin.Choose(List.of(
-            new AttackOrigin.Actor(),
-            new AttackOrigin.StoredFigure(
+        ActionOrigin origin = new ActionOrigin.Choose(List.of(
+            new ActionOrigin.Actor(),
+            new ActionOrigin.StoredFigure(
                 new ExecutionVariableId("doppelganger")
             )
         ));
 
-        AttackTargetPlan.Query targets = new AttackTargetPlan.Query(
+        TargetPlan.Query targets = new TargetPlan.Query(
             enemiesWithinRange(
                 new TargetAnchor.AttackOrigin(),
                 new IntExpression.Constant(3)
@@ -171,10 +171,10 @@ class AttackModelTest {
             List.of()
         );
 
-        assertInstanceOf(AttackOrigin.Choose.class, ability.origin());
+        assertInstanceOf(ActionOrigin.Choose.class, ability.origin());
         assertEquals(
             DuplicatePolicy.REPEATED_TARGETS_ALLOWED,
-            ((AttackTargetPlan.Query) ability.targeting()).duplicates()
+            ((TargetPlan.Query) ability.targeting()).duplicates()
         );
     }
 

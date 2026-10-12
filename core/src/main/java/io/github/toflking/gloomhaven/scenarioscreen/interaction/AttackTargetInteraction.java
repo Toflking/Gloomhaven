@@ -2,48 +2,44 @@ package io.github.toflking.gloomhaven.scenarioscreen.interaction;
 
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.DuplicatePolicy;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetSelectionMode;
+import io.github.toflking.gloomhaven.rules.execution.attack.FigureTargetSelection;
+import io.github.toflking.gloomhaven.rules.execution.attack.preview.AttackPreview;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 public final class AttackTargetInteraction implements ScenarioInteractionState {
-    private final FigureId attacker;
+    private final FigureId attackerId;
     private final Set<FigureId> eligibleTargets;
     private final int minimumTargets;
     private final int maximumTargets;
     private final DuplicatePolicy duplicates;
     private final TargetSelectionMode selectionMode;
+    private final Map<FigureId, AttackPreview> previews;
 
     private final List<FigureId> selectedTargets = new ArrayList<>();
+    private FigureId hoveredTarget;
 
     public AttackTargetInteraction(
-        FigureId attacker,
-        Set<FigureId> eligibleTargets,
-        int minimumTargets,
-        int maximumTargets,
-        DuplicatePolicy duplicates,
-        TargetSelectionMode selectionMode
+        FigureId attackerId,
+        FigureTargetSelection.FigureTargets selection,
+        Map<FigureId, AttackPreview> previews
     ) {
-        this.attacker = Objects.requireNonNull(attacker, "attacker");
-        this.eligibleTargets = Set.copyOf(eligibleTargets);
-        this.minimumTargets = minimumTargets;
-        this.maximumTargets = maximumTargets;
-        this.duplicates = Objects.requireNonNull(duplicates, "duplicates");
-        this.selectionMode = Objects.requireNonNull(
-            selectionMode,
-            "selectionMode"
-        );
+        this.attackerId = Objects.requireNonNull(attackerId, "actorId");
+        this.eligibleTargets = Set.copyOf(selection.eligibleTargets());
+        this.minimumTargets = selection.minimumTargets();
+        this.maximumTargets = selection.maximumTargets();
+        this.duplicates = Objects.requireNonNull(selection.duplicates(), "duplicates");
+        this.selectionMode = Objects.requireNonNull(selection.selectionMode(), "selectionMode");
+        this.previews = Map.copyOf(previews);
 
         if (selectionMode == TargetSelectionMode.FIXED) {
             selectedTargets.addAll(this.eligibleTargets);
         }
     }
 
-    public FigureId getAttacker() {
-        return attacker;
+    public FigureId getAttackerId() {
+        return attackerId;
     }
 
     public DuplicatePolicy getDuplicates() {
@@ -64,6 +60,21 @@ public final class AttackTargetInteraction implements ScenarioInteractionState {
 
     public List<FigureId> getSelectedTargets() {
         return selectedTargets;
+    }
+
+    public AttackPreview previewFor(FigureId figureId) {
+        if (!selectedTargets.contains(figureId)
+            && !Objects.equals(hoveredTarget, figureId)) {
+            return null;
+        }
+        return previews.get(figureId);
+    }
+
+    public void hoverTarget(FigureId figureId) {
+        hoveredTarget = figureId != null
+            && eligibleTargets.contains(figureId)
+            ? figureId
+            : null;
     }
 
     public boolean areAllEligibleTargetsSelected() {

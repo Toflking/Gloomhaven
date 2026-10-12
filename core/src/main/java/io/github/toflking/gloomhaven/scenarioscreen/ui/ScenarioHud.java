@@ -61,9 +61,23 @@ public final class ScenarioHud implements Disposable {
                         if (targeting.getSelectionMode() == TargetSelectionMode.FIXED && !targeting.areAllEligibleTargetsSelected()) {
                             return;
                         }
-                        commandHandler.accept(new ChooseAttackTargetsCommand(targeting.getSelectedTargets()));
+                        commandHandler.accept(new ChooseFigureTargetsCommand(targeting.getSelectedTargets()));
                     }
-                    case AreaPlacementInteraction area -> {
+                    case HealTargetInteraction targeting -> {
+                        if (targeting.getSelectionMode() == TargetSelectionMode.FIXED && !targeting.areAllEligibleTargetsSelected()) {
+                            return;
+                        }
+                        commandHandler.accept(new ChooseFigureTargetsCommand(targeting.getSelectedTargets()));
+                    }
+                    case AttackAreaPlacementInteraction area -> {
+                        if (!area.canConfirm()) {
+                            return;
+                        }
+                        commandHandler.accept(new ChooseAttackAreaCommand(
+                            area.currentPlacement().option()
+                        ));
+                    }
+                    case HealAreaPlacementInteraction area -> {
                         if (!area.canConfirm()) {
                             return;
                         }
@@ -101,7 +115,18 @@ public final class ScenarioHud implements Disposable {
                             targeting.getSelectedTargets().clear();
                         }
                     }
-                    case AreaPlacementInteraction ignored ->
+                    case HealTargetInteraction targeting -> {
+                        if (targeting.getSelectionMode()
+                            == TargetSelectionMode.FIXED
+                            || targeting.getSelectedTargets().isEmpty()) {
+                            commandHandler.accept(new CancelActionCommand());
+                        } else {
+                            targeting.getSelectedTargets().clear();
+                        }
+                    }
+                    case AttackAreaPlacementInteraction ignored ->
+                        commandHandler.accept(new CancelActionCommand());
+                    case HealAreaPlacementInteraction ignored ->
                         commandHandler.accept(new CancelActionCommand());
                 }
             }
@@ -326,7 +351,13 @@ public final class ScenarioHud implements Disposable {
                 cancelButton.setDisabled(false);
                 confirmButton.setText("Confirm Targets: " + targeting.getSelectedTargets().size() + "/" + targeting.getMaximumTargets());
             }
-            case AreaPlacementInteraction area -> {
+            case HealTargetInteraction targeting -> {
+                confirmButton.setDisabled(false);
+                confirmButton.setVisible(true);
+                cancelButton.setDisabled(false);
+                confirmButton.setText("Confirm Heal Targets: " + targeting.getSelectedTargets().size() + "/" + targeting.getMaximumTargets());
+            }
+            case AttackAreaPlacementInteraction area -> {
                 confirmButton.setDisabled(!area.canConfirm());
                 confirmButton.setVisible(true);
                 cancelButton.setDisabled(false);
@@ -334,6 +365,16 @@ public final class ScenarioHud implements Disposable {
                     area.canConfirm()
                         ? "Confirm Area"
                         : "Place Area"
+                );
+            }
+            case HealAreaPlacementInteraction area -> {
+                confirmButton.setDisabled(!area.canConfirm());
+                confirmButton.setVisible(true);
+                cancelButton.setDisabled(false);
+                confirmButton.setText(
+                    area.canConfirm()
+                        ? "Confirm Heal Area"
+                        : "Place Heal Area"
                 );
             }
         }

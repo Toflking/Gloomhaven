@@ -10,7 +10,7 @@ import io.github.toflking.gloomhaven.rules.card.CardAction;
 import io.github.toflking.gloomhaven.rules.card.CardDefinition;
 import io.github.toflking.gloomhaven.rules.card.CardHalf;
 import io.github.toflking.gloomhaven.rules.command.CancelActionCommand;
-import io.github.toflking.gloomhaven.rules.command.ChooseAttackTargetsCommand;
+import io.github.toflking.gloomhaven.rules.command.ChooseFigureTargetsCommand;
 import io.github.toflking.gloomhaven.rules.command.ChooseMovePathCommand;
 import io.github.toflking.gloomhaven.rules.command.PlayCardActionCommand;
 import io.github.toflking.gloomhaven.rules.command.SkipActionCommand;
@@ -25,7 +25,7 @@ import io.github.toflking.gloomhaven.rules.board.HexBoard;
 import io.github.toflking.gloomhaven.rules.board.HexPosition;
 import io.github.toflking.gloomhaven.rules.board.HexTile;
 import io.github.toflking.gloomhaven.rules.board.TerrainType;
-import io.github.toflking.gloomhaven.rules.execution.choice.PendingAttackChoice;
+import io.github.toflking.gloomhaven.rules.execution.choice.PendingFigureTargetChoice;
 import io.github.toflking.gloomhaven.rules.execution.choice.PendingMoveChoice;
 import io.github.toflking.gloomhaven.rules.scenario.history.ScenarioSnapshot;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioState;
@@ -118,7 +118,7 @@ class ScenarioEngineUndoTest {
         engine.execute(new PlayCardActionCommand(
             new AbilitySource(cardId, CardHalf.TOP)
         ));
-        engine.execute(new ChooseAttackTargetsCommand(
+        engine.execute(new ChooseFigureTargetsCommand(
             List.of(MONSTER)
         ));
 
@@ -130,7 +130,7 @@ class ScenarioEngineUndoTest {
         assertEquals(10, state.figure(MONSTER).health().currentHealth());
         assertEquals(MONSTER_HEX, state.positionOf(MONSTER));
         assertInstanceOf(
-            PendingAttackChoice.class,
+            PendingFigureTargetChoice.class,
             state.execution().pendingChoice()
         );
         assertFalse(
@@ -222,7 +222,7 @@ class ScenarioEngineUndoTest {
         assertFalse(state.execution().canCancel());
         assertTrue(state.execution().hasPerformedAbility());
         assertInstanceOf(
-            PendingAttackChoice.class,
+            PendingFigureTargetChoice.class,
             state.execution().pendingChoice()
         );
     }
@@ -321,7 +321,7 @@ class ScenarioEngineUndoTest {
         assertFalse(state.execution().canCancel());
         assertFalse(state.execution().hasPerformedAbility());
         assertInstanceOf(
-            PendingAttackChoice.class,
+            PendingFigureTargetChoice.class,
             state.execution().pendingChoice()
         );
 
