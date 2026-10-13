@@ -9,6 +9,10 @@ import io.github.toflking.gloomhaven.rules.ability.attack.targeting.FigurePredic
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.FigureReference;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.LineOfSightPolicy;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.PathSelectionRule;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetAnchor;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetQuery;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetRegion;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.VisibilityPolicy;
 import io.github.toflking.gloomhaven.rules.ability.value.AbilityValue;
 import io.github.toflking.gloomhaven.rules.ability.value.ExecutionVariableId;
 import io.github.toflking.gloomhaven.rules.ability.value.IntExpression;
@@ -23,6 +27,10 @@ import io.github.toflking.gloomhaven.rules.card.AbilitySource;
 import io.github.toflking.gloomhaven.rules.card.CardHalf;
 import io.github.toflking.gloomhaven.rules.execution.ActionExecution;
 import io.github.toflking.gloomhaven.rules.execution.AbilityExpressionContext;
+import io.github.toflking.gloomhaven.rules.conditions.ActiveCondition;
+import io.github.toflking.gloomhaven.rules.conditions.Conditions;
+import io.github.toflking.gloomhaven.rules.figure.ConditionState;
+import io.github.toflking.gloomhaven.rules.figure.Figure;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioState;
 import org.junit.jupiter.api.Test;
@@ -254,6 +262,117 @@ class TargetResolverTest {
     }
 
     @Test
+    void characterCannotTargetAnInvisibleMonster() {
+        TargetPlan.Query plan =
+            AttackTargetPlans.singleEnemyWithinRange(2);
+        ScenarioState state = scenarioWithRadius(2);
+        state.addFigure(character(ACTOR, 10), new HexPosition(0, 0));
+        state.addFigure(
+            invisible(monster(ENEMY, 10)),
+            new HexPosition(1, 0)
+        );
+
+        FigureTargetSelection.FigureTargets choice = assertInstanceOf(
+            FigureTargetSelection.FigureTargets.class,
+            resolver(state, plan).resolveAttack(plan).selection()
+        );
+
+        assertTrue(choice.eligibleTargets().isEmpty());
+    }
+
+    @Test
+    void monsterCannotTargetAnInvisibleCharacter() {
+        TargetPlan.Query plan =
+            AttackTargetPlans.singleEnemyWithinRange(2);
+        ScenarioState state = scenarioWithRadius(2);
+        state.addFigure(monster(ACTOR, 10), new HexPosition(0, 0));
+        state.addFigure(
+            invisible(character(ENEMY, 10)),
+            new HexPosition(1, 0)
+        );
+
+        FigureTargetSelection.FigureTargets choice = assertInstanceOf(
+            FigureTargetSelection.FigureTargets.class,
+            resolver(state, plan).resolveAttack(plan).selection()
+        );
+
+        assertTrue(choice.eligibleTargets().isEmpty());
+    }
+
+    @Test
+    void anAbilityCanExplicitlyIgnoreEnemyInvisibility() {
+        TargetPlan.Query plan =
+            AttackTargetPlans.singleEnemyWithinRange(2);
+        ScenarioState state = scenarioWithRadius(2);
+        state.addFigure(character(ACTOR, 10), new HexPosition(0, 0));
+        state.addFigure(
+            invisible(monster(ENEMY, 10)),
+            new HexPosition(1, 0)
+        );
+        AttackAbility attack = new AttackAbility(
+            AbilityValue.fixed(2),
+            new io.github.toflking.gloomhaven.rules.ability.attack.ActionOrigin.Actor(),
+            plan,
+            List.of(),
+            VisibilityPolicy.IGNORE_ENEMY_INVISIBILITY
+        );
+
+        FigureTargetSelection.FigureTargets choice = assertInstanceOf(
+            FigureTargetSelection.FigureTargets.class,
+            resolver(state, attack).resolveAttack(plan).selection()
+        );
+
+        assertEquals(Set.of(ENEMY), choice.eligibleTargets());
+    }
+
+    @Test
+    void alliedAbilitiesCanStillTargetInvisibleFigures() {
+        TargetPlan.Query plan = oneAllyWithinRange(2);
+        ScenarioState state = scenarioWithRadius(2);
+        state.addFigure(character(ACTOR, 10), new HexPosition(0, 0));
+        state.addFigure(
+            invisible(character(ENEMY, 10)),
+            new HexPosition(1, 0)
+        );
+
+        FigureTargetSelection.FigureTargets choice = assertInstanceOf(
+            FigureTargetSelection.FigureTargets.class,
+            resolver(state, plan).resolveAttack(plan).selection()
+        );
+
+        assertEquals(Set.of(ENEMY), choice.eligibleTargets());
+    }
+
+    @Test
+    void areaDoesNotResolveInvisibleEnemiesAsTargets() {
+        TargetPlan.Area plan = new TargetPlan.Area(
+            new HexPattern(List.of(new HexPosition(1, 0))),
+            new AreaPlacementRule.AroundOrigin(false, false),
+            enemiesOfActor()
+        );
+        ScenarioState state = scenarioWithRadius(1);
+        state.addFigure(character(ACTOR, 10), new HexPosition(0, 0));
+        state.addFigure(
+            invisible(monster(ENEMY, 10)),
+            new HexPosition(1, 0)
+        );
+        TargetResolver resolver = resolver(state, plan);
+
+        FigureTargetSelection.AreaPlacement choice = assertInstanceOf(
+            FigureTargetSelection.AreaPlacement.class,
+            resolver.resolveAttack(plan).selection()
+        );
+
+        assertTrue(choice.placements().stream().noneMatch(
+            ResolvedAreaPlacement::eligible
+        ));
+        assertTrue(resolver.resolveAreaTargets(
+            plan,
+            Set.of(new HexPosition(1, 0))
+        ).isEmpty());
+    }
+
+    @Test
     void rejectsTargetPlansWhoseChoiceFlowsAreNotImplemented() {
         TargetPlan.Query query =
             AttackTargetPlans.singleEnemyWithinRange(2);
@@ -302,6 +421,44 @@ class TargetResolverTest {
         );
     }
 
+    private static TargetPlan.Query oneAllyWithinRange(int range) {
+        return new TargetPlan.Query(
+            new TargetQuery(
+                new TargetRegion.WithinRangeOf(
+                    new TargetAnchor.AttackOrigin(),
+                    new IntExpression.Constant(range)
+                ),
+                new FigurePredicate.Relationship(
+                    new FigureReference.Actor(),
+                    FigurePredicate.FigureRelation.ALLY
+                ),
+                LineOfSightPolicy.REQUIRED
+            ),
+            new io.github.toflking.gloomhaven.rules.ability.attack.targeting.Cardinality.ChooseUpTo(
+                new IntExpression.Constant(1)
+            ),
+            DuplicatePolicy.DISTINCT_TARGETS
+        );
+    }
+
+    private static Figure invisible(Figure figure) {
+        return new Figure(
+            figure.id(),
+            figure.definitionId(),
+            figure.type(),
+            figure.origin(),
+            figure.factionId(),
+            figure.health(),
+            new ConditionState(Map.of(
+                Conditions.INVISIBLE.id(),
+                new ActiveCondition(
+                    Conditions.INVISIBLE.id(),
+                    new ActiveCondition.ConditionExpiration.EndOfTurnInRound(1)
+                )
+            ))
+        );
+    }
+
     private static TargetResolver resolver(
         ScenarioState state,
         TargetPlan plan
@@ -310,6 +467,13 @@ class TargetResolverTest {
             AbilityValue.fixed(2),
             plan
         );
+        return resolver(state, attack);
+    }
+
+    private static TargetResolver resolver(
+        ScenarioState state,
+        AttackAbility attack
+    ) {
         state.startActionExecution(ACTOR, SOURCE, List.of(attack));
         ActionExecution execution = state.execution();
         execution.beginAttack(

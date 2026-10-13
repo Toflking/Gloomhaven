@@ -11,6 +11,7 @@ import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetPlan;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetQuery;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetRegion;
 import io.github.toflking.gloomhaven.rules.ability.heal.HealAbility;
+import io.github.toflking.gloomhaven.rules.ability.attack.effect.HealEffect;
 import io.github.toflking.gloomhaven.rules.ability.value.AbilityValue;
 import io.github.toflking.gloomhaven.rules.ability.value.EvaluationMoment;
 import io.github.toflking.gloomhaven.rules.ability.value.IntExpression;
@@ -28,20 +29,25 @@ import io.github.toflking.gloomhaven.rules.command.ChooseAttackAreaCommand;
 import io.github.toflking.gloomhaven.rules.command.ChooseFigureTargetsCommand;
 import io.github.toflking.gloomhaven.rules.command.PlayCardActionCommand;
 import io.github.toflking.gloomhaven.rules.command.UndoCommand;
+import io.github.toflking.gloomhaven.rules.conditions.ActiveCondition;
 import io.github.toflking.gloomhaven.rules.conditions.Conditions;
 import io.github.toflking.gloomhaven.rules.content.cards.CardCatalog;
 import io.github.toflking.gloomhaven.rules.event.ActionFinishedEvent;
 import io.github.toflking.gloomhaven.rules.event.HealAreaPlacementRequestedEvent;
 import io.github.toflking.gloomhaven.rules.event.HealTargetChoiceRequestedEvent;
+import io.github.toflking.gloomhaven.rules.event.FigureHealedEvent;
+import io.github.toflking.gloomhaven.rules.event.ConditionAppliedEvent;
 import io.github.toflking.gloomhaven.rules.execution.choice.PendingAreaChoice;
 import io.github.toflking.gloomhaven.rules.execution.choice.PendingFigureTargetChoice;
 import io.github.toflking.gloomhaven.rules.figure.ConditionState;
 import io.github.toflking.gloomhaven.rules.figure.Figure;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioState;
+import io.github.toflking.gloomhaven.rules.scenario.TurnOrderEntry;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -128,15 +134,22 @@ class ScenarioEngineHealTest {
 
         assertTrue(requested.previews().get(ALLY).poison());
         assertEquals(0, requested.previews().get(ALLY).projectedHealing());
+        assertEquals(
+            List.of(Conditions.POISON.id(), Conditions.WOUND.id()),
+            requested.previews()
+                .get(ALLY)
+                .effects()
+                .removedConditions()
+        );
 
         engine.execute(new ChooseFigureTargetsCommand(List.of(ALLY)));
 
         assertEquals(5, state.figure(ALLY).health().currentHealth());
         assertFalse(
-            state.figure(ALLY).conditions().contains(Conditions.POISON.id())
+            state.figure(ALLY).conditions().contains(Conditions.WOUND.id())
         );
         assertFalse(
-            state.figure(ALLY).conditions().contains(Conditions.WOUND.id())
+            state.figure(ALLY).conditions().contains(Conditions.POISON.id())
         );
     }
 
@@ -153,13 +166,78 @@ class ScenarioEngineHealTest {
             new HealAbility(AbilityValue.fixed(3), oneAdjacentAlly())
         );
 
-        engine.execute(new PlayCardActionCommand(SOURCE));
+        CommandResult playResult = engine.execute(
+            new PlayCardActionCommand(SOURCE)
+        );
+        HealTargetChoiceRequestedEvent requested = assertInstanceOf(
+            HealTargetChoiceRequestedEvent.class,
+            playResult.events().getFirst()
+        );
+        assertEquals(
+            List.of(Conditions.WOUND.id()),
+            requested.previews()
+                .get(ALLY)
+                .effects()
+                .removedConditions()
+        );
         engine.execute(new ChooseFigureTargetsCommand(List.of(ALLY)));
 
         assertEquals(8, state.figure(ALLY).health().currentHealth());
         assertFalse(
             state.figure(ALLY).conditions().contains(Conditions.WOUND.id())
         );
+    }
+
+    @Test
+    void previewsAppliesAndRestoresAHealConditionEffect() {
+        ScenarioState state = scenario(character(ALLY, 10));
+        state.damageFigure(ALLY, 5);
+        ScenarioEngine engine = engine(
+            state,
+            new HealAbility(
+                AbilityValue.fixed(3),
+                new io.github.toflking.gloomhaven.rules.ability.attack.ActionOrigin.Actor(),
+                oneAdjacentAlly(),
+                List.of(new HealEffect.Condition(
+                    Conditions.STRENGTHEN,
+                    false
+                ))
+            )
+        );
+
+        CommandResult playResult = engine.execute(
+            new PlayCardActionCommand(SOURCE)
+        );
+        HealTargetChoiceRequestedEvent requested = assertInstanceOf(
+            HealTargetChoiceRequestedEvent.class,
+            playResult.events().getFirst()
+        );
+        assertEquals(
+            List.of(Conditions.STRENGTHEN.id()),
+            requested.previews()
+                .get(ALLY)
+                .effects()
+                .addedConditions()
+        );
+
+        CommandResult healResult = engine.execute(
+            new ChooseFigureTargetsCommand(List.of(ALLY))
+        );
+
+        assertEquals(8, state.figure(ALLY).health().currentHealth());
+        assertTrue(state.figure(ALLY).conditions()
+            .contains(Conditions.STRENGTHEN.id()));
+        assertInstanceOf(FigureHealedEvent.class, healResult.events().get(0));
+        assertInstanceOf(
+            ConditionAppliedEvent.class,
+            healResult.events().get(1)
+        );
+
+        engine.execute(new UndoCommand());
+
+        assertEquals(5, state.figure(ALLY).health().currentHealth());
+        assertFalse(state.figure(ALLY).conditions()
+            .contains(Conditions.STRENGTHEN.id()));
     }
 
     @Test
@@ -285,14 +363,29 @@ class ScenarioEngineHealTest {
         ));
         state.addFigure(character(HEALER, 10), healerPosition);
         state.addFigure(ally, allyPosition);
-        state.setActiveFigure(HEALER);
+        state.startNextRound(List.of(
+            new TurnOrderEntry(HEALER, 50),
+            new TurnOrderEntry(ALLY, 60)
+        ));
         return state;
     }
 
     private static Figure withConditions(
         Figure figure,
-        FigurePredicate.ConditionId... conditions
+        Conditions.ConditionId... conditions
     ) {
+        Map<Conditions.ConditionId, ActiveCondition> activeConditions =
+            new HashMap<>();
+        for (Conditions.ConditionId condition : conditions) {
+            activeConditions.put(
+                condition,
+                new ActiveCondition(
+                    condition,
+                    new ActiveCondition.ConditionExpiration.UntilRemoved()
+                )
+            );
+        }
+
         return new Figure(
             figure.id(),
             figure.definitionId(),
@@ -300,7 +393,7 @@ class ScenarioEngineHealTest {
             figure.origin(),
             figure.factionId(),
             figure.health(),
-            new ConditionState(List.of(conditions))
+            new ConditionState(activeConditions)
         );
     }
 }

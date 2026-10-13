@@ -1,5 +1,7 @@
 package io.github.toflking.gloomhaven.rules.ability.attack;
 
+import io.github.toflking.gloomhaven.rules.ability.attack.effect.AttackEffect;
+import io.github.toflking.gloomhaven.rules.ability.attack.effect.TargetEffectTiming;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetPlan;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.Cardinality;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.DuplicatePolicy;
@@ -14,6 +16,7 @@ import io.github.toflking.gloomhaven.rules.ability.value.AbilityValue;
 import io.github.toflking.gloomhaven.rules.ability.value.EvaluationMoment;
 import io.github.toflking.gloomhaven.rules.ability.value.ExecutionVariableId;
 import io.github.toflking.gloomhaven.rules.ability.value.IntExpression;
+import io.github.toflking.gloomhaven.rules.conditions.Conditions;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -23,6 +26,41 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 class AttackModelTest {
+
+    @Test
+    void knownAttackEffectsDefineTheirOwnTiming() {
+        assertEquals(
+            TargetEffectTiming.AFTER_DAMAGE,
+            new AttackEffect.Condition(Conditions.POISON, false).timing()
+        );
+        assertEquals(
+            TargetEffectTiming.AFTER_DAMAGE,
+            new AttackEffect.Curse(false).timing()
+        );
+        assertEquals(
+            TargetEffectTiming.AFTER_DAMAGE,
+            new AttackEffect.ForcedMovement(
+                AttackEffect.ForcedMovementType.PUSH,
+                new IntExpression.Constant(1),
+                false
+            ).timing()
+        );
+        assertEquals(
+            TargetEffectTiming.DAMAGE_CALCULATION,
+            new AttackEffect.Pierce(
+                new IntExpression.Constant(1),
+                false
+            ).timing()
+        );
+        assertEquals(
+            TargetEffectTiming.AFTER_ATTACK,
+            new AttackEffect.ExecuteAfterAttack(
+                new FigurePredicate.Any(),
+                new IntExpression.Constant(2),
+                false
+            ).timing()
+        );
+    }
 
     @Test
     void representsTargetCountResolvedFromEarlierSelfDamage() {

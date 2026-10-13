@@ -2,11 +2,13 @@ package io.github.toflking.gloomhaven.rules.ability.attack.effect;
 
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.FigurePredicate;
 import io.github.toflking.gloomhaven.rules.ability.value.IntExpression;
+import io.github.toflking.gloomhaven.rules.conditions.Conditions;
 
 import java.util.Objects;
 
 public sealed interface AttackEffect
     permits AttackEffect.Condition,
+    AttackEffect.Curse,
     AttackEffect.ForcedMovement,
     AttackEffect.Pierce,
     AttackEffect.ExecuteAfterAttack,
@@ -17,47 +19,63 @@ public sealed interface AttackEffect
     boolean optional();
 
     record Condition(
-        FigurePredicate.ConditionId condition,
-        TargetEffectTiming timing,
+        Conditions.ConditionDefinition condition,
         boolean optional
     ) implements AttackEffect {
 
         public Condition {
             Objects.requireNonNull(condition, "condition");
-            Objects.requireNonNull(timing, "timing");
+        }
+
+        @Override
+        public TargetEffectTiming timing() {
+            return TargetEffectTiming.AFTER_DAMAGE;
+        }
+    }
+
+    record Curse(boolean optional) implements AttackEffect {
+
+        @Override
+        public TargetEffectTiming timing() {
+            return TargetEffectTiming.AFTER_DAMAGE;
         }
     }
 
     record ForcedMovement(
         ForcedMovementType type,
         IntExpression amount,
-        TargetEffectTiming timing,
         boolean optional
     ) implements AttackEffect {
 
         public ForcedMovement {
             Objects.requireNonNull(type, "type");
             Objects.requireNonNull(amount, "amount");
-            Objects.requireNonNull(timing, "timing");
+        }
+
+        @Override
+        public TargetEffectTiming timing() {
+            return TargetEffectTiming.AFTER_DAMAGE;
         }
     }
 
     record Pierce(
         IntExpression amount,
-        TargetEffectTiming timing,
         boolean optional
     ) implements AttackEffect {
 
         public Pierce {
             Objects.requireNonNull(amount, "amount");
-            Objects.requireNonNull(timing, "timing");
+        }
+
+        @Override
+        public TargetEffectTiming timing() {
+            return TargetEffectTiming.DAMAGE_CALCULATION;
         }
     }
 
     record ExecuteAfterAttack(
         FigurePredicate eligibleTargets,
         IntExpression maximumRemainingHealth,
-        TargetEffectTiming timing,
         boolean optional
     ) implements AttackEffect {
 
@@ -70,7 +88,11 @@ public sealed interface AttackEffect
                 maximumRemainingHealth,
                 "maximumRemainingHealth"
             );
-            Objects.requireNonNull(timing, "timing");
+        }
+
+        @Override
+        public TargetEffectTiming timing() {
+            return TargetEffectTiming.AFTER_ATTACK;
         }
     }
 

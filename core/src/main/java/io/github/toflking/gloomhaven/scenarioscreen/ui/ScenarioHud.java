@@ -44,6 +44,7 @@ public final class ScenarioHud implements Disposable {
         stage = new Stage(new ScreenViewport());
 
         phaseLabel = new Label("", skin);
+        phaseLabel.setFontScale(1.2f);
 
         confirmButton = new TextButton("Confirm", skin, "scenario-action");
         confirmButton.addListener(new ChangeListener() {
@@ -81,6 +82,26 @@ public final class ScenarioHud implements Disposable {
                         if (!area.canConfirm()) {
                             return;
                         }
+                        commandHandler.accept(new ChooseAttackAreaCommand(
+                            area.currentPlacement().option()
+                        ));
+                    }
+                    case DamageTargetInteraction targeting ->
+                        commandHandler.accept(new ChooseFigureTargetsCommand(
+                            targeting.selectedTargets()
+                        ));
+                    case ConditionTargetInteraction targeting ->
+                        commandHandler.accept(new ChooseFigureTargetsCommand(
+                            targeting.selectedTargets()
+                        ));
+                    case DamageAreaPlacementInteraction area -> {
+                        if (!area.canConfirm()) return;
+                        commandHandler.accept(new ChooseAttackAreaCommand(
+                            area.currentPlacement().option()
+                        ));
+                    }
+                    case ConditionAreaPlacementInteraction area -> {
+                        if (!area.canConfirm()) return;
                         commandHandler.accept(new ChooseAttackAreaCommand(
                             area.currentPlacement().option()
                         ));
@@ -127,6 +148,28 @@ public final class ScenarioHud implements Disposable {
                     case AttackAreaPlacementInteraction ignored ->
                         commandHandler.accept(new CancelActionCommand());
                     case HealAreaPlacementInteraction ignored ->
+                        commandHandler.accept(new CancelActionCommand());
+                    case DamageTargetInteraction targeting -> {
+                        if (targeting.selectionMode()
+                            == TargetSelectionMode.FIXED
+                            || targeting.selectedTargets().isEmpty()) {
+                            commandHandler.accept(new CancelActionCommand());
+                        } else {
+                            targeting.selectedTargets().clear();
+                        }
+                    }
+                    case ConditionTargetInteraction targeting -> {
+                        if (targeting.selectionMode()
+                            == TargetSelectionMode.FIXED
+                            || targeting.selectedTargets().isEmpty()) {
+                            commandHandler.accept(new CancelActionCommand());
+                        } else {
+                            targeting.selectedTargets().clear();
+                        }
+                    }
+                    case DamageAreaPlacementInteraction ignored ->
+                        commandHandler.accept(new CancelActionCommand());
+                    case ConditionAreaPlacementInteraction ignored ->
                         commandHandler.accept(new CancelActionCommand());
                 }
             }
@@ -186,7 +229,7 @@ public final class ScenarioHud implements Disposable {
         Table root = new Table();
         root.setFillParent(true);
         root.top().left();
-        root.pad(20f);
+        root.pad(30f);
 
         root.add(phaseLabel);
         root.row();
@@ -201,6 +244,7 @@ public final class ScenarioHud implements Disposable {
         root.add(autoFillButton).padTop(10f);
         root.row();
 
+        addSectionLabel(root, skin, "Movement");
         Table movementButtons = new Table();
         for (int movement = 1; movement <= 4; movement++) {
             movementButtons.add(
@@ -212,9 +256,18 @@ public final class ScenarioHud implements Disposable {
                 )
             ).padRight(5f);
         }
-        root.add(movementButtons).padTop(10f);
+        movementButtons.add(
+            createCardButton(
+                skin,
+                commandHandler,
+                "Move 2 -> Attack 3 R3",
+                DebugCards.MOVE_2_ATTACK_3
+            )
+        );
+        root.add(movementButtons).left().colspan(3);
         root.row();
 
+        addSectionLabel(root, skin, "Attacks");
         Table attackButtons = new Table();
         attackButtons.add(createCardButton(
             skin,
@@ -240,28 +293,97 @@ public final class ScenarioHud implements Disposable {
             "Attack 1 All Adj",
             DebugCards.ATTACK_1_ALL_ADJACENT
         )).padRight(5f);
-        attackButtons.add(createCardButton(
+        root.add(attackButtons).left().colspan(3);
+        root.row();
+
+        Table attackAreaButtons = new Table();
+        attackAreaButtons.add(createCardButton(
             skin,
             commandHandler,
             "Attack 2 Area R3",
             DebugCards.ATTACK_2_AREA_RANGE_3
         )).padRight(5f);
-        attackButtons.add(createCardButton(
+        attackAreaButtons.add(createCardButton(
             skin,
             commandHandler,
             "Attack 1 Area Self",
             DebugCards.ATTACK_1_AREA_AROUND_ORIGIN
-        ));
-        root.add(attackButtons).padTop(5f);
-        root.row();
-        root.add(createCardButton(
+        )).padRight(5f);
+        attackAreaButtons.add(createCardButton(
             skin,
             commandHandler,
-            "Move 2 -> Attack 3 R3",
-            DebugCards.MOVE_2_ATTACK_3
-        )).padTop(5f);
+            "Attack 2 + Poison R2",
+            DebugCards.ATTACK_2_POISON_RANGE_2
+        ));
+        root.add(attackAreaButtons).left().colspan(3);
+        root.row();
+
+        addSectionLabel(root, skin, "Healing");
+        Table healButtons = new Table();
+        healButtons.add(createCardButton(
+            skin,
+            commandHandler,
+            "Heal 3 R2",
+            DebugCards.HEAL_3_RANGE_2
+        )).padRight(5f);
+        healButtons.add(createCardButton(
+            skin,
+            commandHandler,
+            "Heal 3 Area R3",
+            DebugCards.HEAL_3_AREA_RANGE_3
+        ));
+        root.add(healButtons).left().colspan(3);
+        root.row();
+
+        addSectionLabel(root, skin, "Direct damage");
+        Table damageButtons = new Table();
+        damageButtons.add(createCardButton(
+            skin,
+            commandHandler,
+            "Damage 2 R2",
+            DebugCards.DAMAGE_2_RANGE_2
+        )).padRight(5f);
+        damageButtons.add(createCardButton(
+            skin,
+            commandHandler,
+            "Damage 2 Area R3",
+            DebugCards.DAMAGE_2_AREA_RANGE_3
+        ));
+        root.add(damageButtons).left().colspan(3);
+        root.row();
+
+        addSectionLabel(root, skin, "Conditions");
+        Table conditionButtons = new Table();
+        conditionButtons.add(createCardButton(
+            skin,
+            commandHandler,
+            "Poison R2",
+            DebugCards.POISON_RANGE_2
+        )).padRight(5f);
+        conditionButtons.add(createCardButton(
+            skin,
+            commandHandler,
+            "Muddle Area R3",
+            DebugCards.MUDDLE_AREA_RANGE_3
+        ));
+        root.add(conditionButtons).left().colspan(3);
 
         stage.addActor(root);
+    }
+
+    private void addSectionLabel(
+        Table root,
+        Skin skin,
+        String text
+    ) {
+        Label label = new Label(text, skin);
+        label.setFontScale(1.15f);
+        root.add(label)
+            .left()
+            .colspan(3)
+            .padTop(10f)
+            .padBottom(3f);
+        root.row();
     }
 
     private TextButton createCardButton(
@@ -275,6 +397,8 @@ public final class ScenarioHud implements Disposable {
             skin,
             "scenario-action"
         );
+        button.getLabel().setFontScale(1.1f);
+        button.pad(7f, 10f, 7f, 10f);
         cardButtons.add(button);
 
         button.addListener(new ChangeListener() {
@@ -306,7 +430,7 @@ public final class ScenarioHud implements Disposable {
         ScenarioInteractionState interactionState,
         boolean canUndo
     ) {
-        activeFigure = state.activeFigure();
+        activeFigure = state.currentRound().activeFigure();
         this.interactionState = interactionState;
 
         phaseLabel.setText(
@@ -375,6 +499,46 @@ public final class ScenarioHud implements Disposable {
                     area.canConfirm()
                         ? "Confirm Heal Area"
                         : "Place Heal Area"
+                );
+            }
+            case DamageTargetInteraction targeting -> {
+                confirmButton.setDisabled(false);
+                confirmButton.setVisible(true);
+                cancelButton.setDisabled(false);
+                confirmButton.setText(
+                    "Confirm Damage Targets: "
+                        + targeting.selectedTargets().size()
+                        + "/" + targeting.maximumTargets()
+                );
+            }
+            case ConditionTargetInteraction targeting -> {
+                confirmButton.setDisabled(false);
+                confirmButton.setVisible(true);
+                cancelButton.setDisabled(false);
+                confirmButton.setText(
+                    "Confirm Condition Targets: "
+                        + targeting.selectedTargets().size()
+                        + "/" + targeting.maximumTargets()
+                );
+            }
+            case DamageAreaPlacementInteraction area -> {
+                confirmButton.setDisabled(!area.canConfirm());
+                confirmButton.setVisible(true);
+                cancelButton.setDisabled(false);
+                confirmButton.setText(
+                    area.canConfirm()
+                        ? "Confirm Damage Area"
+                        : "Place Damage Area"
+                );
+            }
+            case ConditionAreaPlacementInteraction area -> {
+                confirmButton.setDisabled(!area.canConfirm());
+                confirmButton.setVisible(true);
+                cancelButton.setDisabled(false);
+                confirmButton.setText(
+                    area.canConfirm()
+                        ? "Confirm Condition Area"
+                        : "Place Condition Area"
                 );
             }
         }

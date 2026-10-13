@@ -5,6 +5,9 @@ import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetSelect
 import io.github.toflking.gloomhaven.rules.execution.attack.FigureTargetSelection;
 import io.github.toflking.gloomhaven.rules.execution.attack.preview.AttackPreview;
 import io.github.toflking.gloomhaven.rules.execution.attack.preview.HealPreview;
+import io.github.toflking.gloomhaven.rules.execution.attack.preview.DamagePreview;
+import io.github.toflking.gloomhaven.rules.execution.attack.preview.ConditionPreview;
+import io.github.toflking.gloomhaven.rules.conditions.Conditions;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import org.junit.jupiter.api.Test;
 
@@ -66,6 +69,45 @@ class TargetInteractionPreviewTest {
         assertNull(interaction.previewFor(TARGET));
 
         interaction.getSelectedTargets().add(TARGET);
+        assertEquals(preview, interaction.previewFor(TARGET));
+    }
+
+    @Test
+    void damagePreviewRequiresSelectionOrHover() {
+        DamagePreview preview = new DamagePreview(3, 3);
+        DamageTargetInteraction interaction = new DamageTargetInteraction(
+            ACTOR,
+            selection(),
+            Map.of(TARGET, preview)
+        );
+
+        assertNull(interaction.previewFor(TARGET));
+        interaction.hoverTarget(TARGET);
+        assertEquals(preview, interaction.previewFor(TARGET));
+        interaction.hoverTarget(null);
+        assertNull(interaction.previewFor(TARGET));
+        interaction.selectedTargets().add(TARGET);
+        assertEquals(preview, interaction.previewFor(TARGET));
+    }
+
+    @Test
+    void conditionPreviewRequiresSelectionOrHover() {
+        ConditionPreview preview = new ConditionPreview(
+            java.util.List.of(Conditions.POISON.id())
+        );
+        ConditionTargetInteraction interaction =
+            new ConditionTargetInteraction(
+                ACTOR,
+                selection(),
+                Map.of(TARGET, preview)
+            );
+
+        assertNull(interaction.previewFor(TARGET));
+        interaction.hoverTarget(TARGET);
+        assertEquals(preview, interaction.previewFor(TARGET));
+        interaction.hoverTarget(null);
+        assertNull(interaction.previewFor(TARGET));
+        interaction.selectedTargets().add(TARGET);
         assertEquals(preview, interaction.previewFor(TARGET));
     }
 

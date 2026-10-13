@@ -3,7 +3,11 @@ package io.github.toflking.gloomhaven.rules.execution;
 import io.github.toflking.gloomhaven.rules.ability.Ability;
 import io.github.toflking.gloomhaven.rules.ability.attack.EffectiveAttack;
 import io.github.toflking.gloomhaven.rules.ability.heal.EffectiveHeal;
+import io.github.toflking.gloomhaven.rules.ability.damage.EffectiveDamage;
+import io.github.toflking.gloomhaven.rules.ability.condition.EffectiveCondition;
 import io.github.toflking.gloomhaven.rules.execution.attack.AttackExecutionState;
+import io.github.toflking.gloomhaven.rules.execution.damage.DamageExecutionState;
+import io.github.toflking.gloomhaven.rules.execution.condition.ConditionExecutionState;
 import io.github.toflking.gloomhaven.rules.execution.heal.HealExecutionState;
 import io.github.toflking.gloomhaven.rules.card.AbilitySource;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
@@ -23,6 +27,8 @@ public final class ActionExecution {
     private PendingChoice pendingChoice;
     private AttackExecutionState attackExecution;
     private HealExecutionState healExecution;
+    private DamageExecutionState damageExecution;
+    private ConditionExecutionState conditionExecution;
 
     private boolean abilityPerformed;
     private boolean cancellationLocked;
@@ -50,6 +56,8 @@ public final class ActionExecution {
             null,
             null,
             null,
+            null,
+            null,
             false,
             false
         );
@@ -63,6 +71,8 @@ public final class ActionExecution {
         PendingChoice pendingChoice,
         AttackExecutionState attackExecution,
         HealExecutionState healExecution,
+        DamageExecutionState damageExecution,
+        ConditionExecutionState conditionExecution,
         boolean abilityPerformed,
         boolean cancellationLocked
     ) {
@@ -73,6 +83,8 @@ public final class ActionExecution {
         this.pendingChoice = pendingChoice;
         this.attackExecution = attackExecution;
         this.healExecution = healExecution;
+        this.damageExecution = damageExecution;
+        this.conditionExecution = conditionExecution;
         this.abilityPerformed = abilityPerformed;
         this.cancellationLocked = cancellationLocked;
     }
@@ -147,7 +159,7 @@ public final class ActionExecution {
         EffectiveAttack attack,
         AbilityExpressionContext abilityStartContext
     ) {
-        if (attackExecution != null || healExecution != null) {
+        if (hasTargetBasedExecution()) {
             throw new IllegalStateException(
                 "A target-based ability execution is already active"
             );
@@ -185,7 +197,7 @@ public final class ActionExecution {
         EffectiveHeal heal,
         AbilityExpressionContext abilityStartContext
     ) {
-        if (attackExecution != null || healExecution != null) {
+        if (hasTargetBasedExecution()) {
             throw new IllegalStateException(
                 "A target-based ability execution is already active"
             );
@@ -219,6 +231,76 @@ public final class ActionExecution {
         healExecution = null;
     }
 
+    public void beginDamage(
+        EffectiveDamage damage,
+        AbilityExpressionContext abilityStartContext
+    ) {
+        if (hasTargetBasedExecution()) {
+            throw new IllegalStateException(
+                "A target-based ability execution is already active"
+            );
+        }
+        damageExecution = new DamageExecutionState(
+            damage,
+            abilityStartContext
+        );
+    }
+
+    public DamageExecutionState damageExecution() {
+        if (damageExecution == null) {
+            throw new IllegalStateException(
+                "There is no active direct-damage execution"
+            );
+        }
+        return damageExecution;
+    }
+
+    public void finishDamage() {
+        if (damageExecution == null) {
+            throw new IllegalStateException(
+                "There is no active direct-damage execution"
+            );
+        }
+        if (!damageExecution.isFinished()) {
+            throw new IllegalStateException(
+                "Cannot finish direct damage while targets remain unresolved"
+            );
+        }
+        damageExecution = null;
+    }
+
+    public void beginCondition(EffectiveCondition condition) {
+        if (hasTargetBasedExecution()) {
+            throw new IllegalStateException(
+                "A target-based ability execution is already active"
+            );
+        }
+        conditionExecution = new ConditionExecutionState(condition);
+    }
+
+    public ConditionExecutionState conditionExecution() {
+        if (conditionExecution == null) {
+            throw new IllegalStateException(
+                "There is no active condition execution"
+            );
+        }
+        return conditionExecution;
+    }
+
+    public void finishCondition() {
+        if (conditionExecution == null) {
+            throw new IllegalStateException(
+                "There is no active condition execution"
+            );
+        }
+        if (!conditionExecution.isFinished()) {
+            throw new IllegalStateException(
+                "Cannot finish conditions while targets remain unresolved"
+            );
+        }
+        conditionExecution = null;
+    }
+
     public int currentAbilityIndex() {
         return currentAbilityIndex;
     }
@@ -231,6 +313,12 @@ public final class ActionExecution {
         if (healExecution != null) {
             finishHeal();
         }
+        if (damageExecution != null) {
+            finishDamage();
+        }
+        if (conditionExecution != null) {
+            finishCondition();
+        }
         advance();
     }
 
@@ -239,6 +327,8 @@ public final class ActionExecution {
         clearPendingChoice();
         attackExecution = null;
         healExecution = null;
+        damageExecution = null;
+        conditionExecution = null;
         advance();
     }
 
@@ -270,6 +360,10 @@ public final class ActionExecution {
                 .map(AttackExecutionState::snapshot),
             Optional.ofNullable(healExecution)
                 .map(HealExecutionState::snapshot),
+            Optional.ofNullable(damageExecution)
+                .map(DamageExecutionState::snapshot),
+            Optional.ofNullable(conditionExecution)
+                .map(ConditionExecutionState::snapshot),
             abilityPerformed,
             cancellationLocked
         );
@@ -290,6 +384,12 @@ public final class ActionExecution {
             snapshot.healExecution()
                 .map(HealExecutionState::restore)
                 .orElse(null),
+            snapshot.damageExecution()
+                .map(DamageExecutionState::restore)
+                .orElse(null),
+            snapshot.conditionExecution()
+                .map(ConditionExecutionState::restore)
+                .orElse(null),
             snapshot.abilityPerformed(),
             snapshot.cancellationLocked()
         );
@@ -303,6 +403,8 @@ public final class ActionExecution {
         Optional<PendingChoice> pendingChoice,
         Optional<AttackExecutionState.Snapshot> attackExecution,
         Optional<HealExecutionState.Snapshot> healExecution,
+        Optional<DamageExecutionState.Snapshot> damageExecution,
+        Optional<ConditionExecutionState.Snapshot> conditionExecution,
         boolean abilityPerformed,
         boolean cancellationLocked
     ) {
@@ -314,11 +416,18 @@ public final class ActionExecution {
             Objects.requireNonNull(pendingChoice, "pendingChoice");
             Objects.requireNonNull(attackExecution, "attackExecution");
             Objects.requireNonNull(healExecution, "healExecution");
+            Objects.requireNonNull(damageExecution, "damageExecution");
+            Objects.requireNonNull(conditionExecution, "conditionExecution");
 
-            if (attackExecution.isPresent()
-                && healExecution.isPresent()) {
+            long activeTargetExecutions = java.util.stream.Stream.of(
+                attackExecution,
+                healExecution,
+                damageExecution,
+                conditionExecution
+            ).filter(Optional::isPresent).count();
+            if (activeTargetExecutions > 1) {
                 throw new IllegalArgumentException(
-                    "Attack and heal executions cannot both be active"
+                    "Only one target-based execution may be active"
                 );
             }
 
@@ -329,5 +438,12 @@ public final class ActionExecution {
                 );
             }
         }
+    }
+
+    private boolean hasTargetBasedExecution() {
+        return attackExecution != null
+            || healExecution != null
+            || damageExecution != null
+            || conditionExecution != null;
     }
 }

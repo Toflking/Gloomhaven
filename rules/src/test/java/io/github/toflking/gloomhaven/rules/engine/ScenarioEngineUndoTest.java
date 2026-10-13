@@ -29,6 +29,7 @@ import io.github.toflking.gloomhaven.rules.execution.choice.PendingFigureTargetC
 import io.github.toflking.gloomhaven.rules.execution.choice.PendingMoveChoice;
 import io.github.toflking.gloomhaven.rules.scenario.history.ScenarioSnapshot;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioState;
+import io.github.toflking.gloomhaven.rules.scenario.TurnOrderEntry;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -373,6 +374,20 @@ class ScenarioEngineUndoTest {
         );
     }
 
+    @Test
+    void snapshotRestoresTheCurrentRoundTurnIndex() {
+        ScenarioState state = scenario();
+        ScenarioSnapshot snapshot = state.snapshot();
+
+        state.currentRound().continueToNextFigure();
+        assertEquals(MONSTER, state.currentRound().activeFigure());
+
+        state.restore(snapshot);
+
+        assertEquals(PLAYER, state.currentRound().activeFigure());
+        assertEquals(0, state.currentRound().currentTurnIndex());
+    }
+
     private static ScenarioEngine debugEngine(ScenarioState state) {
         return new ScenarioEngine(
             state,
@@ -399,7 +414,10 @@ class ScenarioEngineUndoTest {
             monster(MONSTER, 10),
             MONSTER_HEX
         );
-        state.setActiveFigure(PLAYER);
+        state.startNextRound(List.of(
+            new TurnOrderEntry(PLAYER, 50),
+            new TurnOrderEntry(MONSTER, 60)
+        ));
         return state;
     }
 }

@@ -92,6 +92,7 @@ public final class ScenarioScreen extends ScreenAdapter {
             camera
         );
         healthBarRenderer = new FigureHealthBarRenderer(
+            assetManager,
             gridLayout,
             spriteCatalog
         );

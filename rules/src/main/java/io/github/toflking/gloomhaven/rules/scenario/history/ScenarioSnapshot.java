@@ -4,18 +4,21 @@ import io.github.toflking.gloomhaven.rules.execution.ActionExecution;
 import io.github.toflking.gloomhaven.rules.figure.*;
 import io.github.toflking.gloomhaven.rules.figure.identities.FigureIdentity;
 import io.github.toflking.gloomhaven.rules.board.HexPosition;
+import io.github.toflking.gloomhaven.rules.conditions.Conditions;
+import io.github.toflking.gloomhaven.rules.scenario.RoundState;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioPhase;
 
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 public record ScenarioSnapshot(
     Map<FigureId, FigureSnapshot> figures,
     Map<FigureId, HexPosition> positions,
+    Optional<RoundState.Snapshot> currentRound,
     ScenarioPhase phase,
-    Optional<FigureId> activeFigure,
     Optional<ActionExecution.Snapshot> execution
 ) {
 
@@ -24,8 +27,8 @@ public record ScenarioSnapshot(
             Map.copyOf(figures);
         Map<FigureId, HexPosition> copiedPositions =
             Map.copyOf(positions);
+        Objects.requireNonNull(currentRound, "currentRound");
         Objects.requireNonNull(phase, "phase");
-        Objects.requireNonNull(activeFigure, "activeFigure");
         Objects.requireNonNull(execution, "execution");
 
         if (!copiedFigures.keySet().equals(copiedPositions.keySet())) {
@@ -39,13 +42,6 @@ public record ScenarioSnapshot(
                 "Snapshot figures cannot share a position"
             );
         }
-        activeFigure.ifPresent(figureId -> {
-            if (!copiedFigures.containsKey(figureId)) {
-                throw new IllegalArgumentException(
-                    "The active figure is missing from the snapshot"
-                );
-            }
-        });
 
         figures = copiedFigures;
         positions = copiedPositions;
@@ -58,7 +54,8 @@ public record ScenarioSnapshot(
         FigureOrigin origin,
         FactionId factionId,
         HealthState health,
-        ConditionState conditions
+        ConditionState conditions,
+        Set<Conditions.ConditionId> conditionImmunities
     ) {
 
         public FigureSnapshot {
@@ -69,6 +66,12 @@ public record ScenarioSnapshot(
             Objects.requireNonNull(factionId, "factionId");
             Objects.requireNonNull(health, "health");
             Objects.requireNonNull(conditions, "conditions");
+            conditionImmunities = Set.copyOf(
+                Objects.requireNonNull(
+                    conditionImmunities,
+                    "conditionImmunities"
+                )
+            );
             if (health.maximumHealth() <= 0) {
                 throw new IllegalArgumentException(
                     "Maximum health cannot be negative"
@@ -89,12 +92,22 @@ public record ScenarioSnapshot(
                 figure.origin(),
                 figure.factionId(),
                 new HealthState(figure.health().maximumHealth(), figure.health().currentHealth()),
-                new ConditionState(figure.conditions().conditions())
+                new ConditionState(figure.conditions().conditions()),
+                figure.conditionImmunities()
             );
         }
 
         public Figure restore() {
-            return new Figure(id, definitionId, identity, origin, factionId, health, conditions);
+            return new Figure(
+                id,
+                definitionId,
+                identity,
+                origin,
+                factionId,
+                health,
+                conditions,
+                conditionImmunities
+            );
         }
     }
 }

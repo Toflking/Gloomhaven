@@ -1,6 +1,8 @@
 package io.github.toflking.gloomhaven.rules.engine;
 
 import io.github.toflking.gloomhaven.rules.ability.attack.AttackAbility;
+import io.github.toflking.gloomhaven.rules.ability.attack.ActionOrigin;
+import io.github.toflking.gloomhaven.rules.ability.attack.effect.AttackEffect;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AreaPlacementRule;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetPlan;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.AttackTargetPlans;
@@ -25,6 +27,8 @@ import io.github.toflking.gloomhaven.rules.event.ActionFinishedEvent;
 import io.github.toflking.gloomhaven.rules.event.AttackAreaPlacementRequestedEvent;
 import io.github.toflking.gloomhaven.rules.event.FigureDamagedEvent;
 import io.github.toflking.gloomhaven.rules.event.AttackTargetChoiceRequestedEvent;
+import io.github.toflking.gloomhaven.rules.event.ConditionAppliedEvent;
+import io.github.toflking.gloomhaven.rules.conditions.Conditions;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import io.github.toflking.gloomhaven.rules.board.HexBoard;
 import io.github.toflking.gloomhaven.rules.board.HexPattern;
@@ -32,6 +36,7 @@ import io.github.toflking.gloomhaven.rules.board.HexPosition;
 import io.github.toflking.gloomhaven.rules.board.HexTile;
 import io.github.toflking.gloomhaven.rules.board.TerrainType;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioState;
+import io.github.toflking.gloomhaven.rules.scenario.TurnOrderEntry;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -39,6 +44,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -298,6 +304,78 @@ class ScenarioEngineAttackTest {
         );
     }
 
+    @Test
+    void appliesAttackConditionsAfterDamage() {
+        ScenarioState state = scenario();
+        ScenarioEngine engine = engine(
+            state,
+            new AttackAbility(
+                AbilityValue.fixed(3),
+                new ActionOrigin.Actor(),
+                AttackTargetPlans.singleEnemyWithinRange(1),
+                List.of(new AttackEffect.Condition(
+                    Conditions.POISON,
+                    false
+                ))
+            )
+        );
+
+        CommandResult playResult = engine.execute(
+            new PlayCardActionCommand(SOURCE)
+        );
+        AttackTargetChoiceRequestedEvent requested = assertInstanceOf(
+            AttackTargetChoiceRequestedEvent.class,
+            playResult.events().getFirst()
+        );
+        assertEquals(
+            List.of(Conditions.POISON.id()),
+            requested.previews()
+                .get(TARGET)
+                .effects()
+                .addedConditions()
+        );
+        CommandResult result = engine.execute(
+            new ChooseFigureTargetsCommand(List.of(TARGET))
+        );
+
+        assertEquals(7, state.figure(TARGET).health().currentHealth());
+        assertTrue(
+            state.figure(TARGET)
+                .conditions()
+                .contains(Conditions.POISON.id())
+        );
+        assertInstanceOf(
+            ConditionAppliedEvent.class,
+            result.events().get(1)
+        );
+    }
+
+    @Test
+    void doesNotApplyAttackConditionsAfterTheTargetIsDefeated() {
+        ScenarioState state = scenario(3);
+        ScenarioEngine engine = engine(
+            state,
+            new AttackAbility(
+                AbilityValue.fixed(3),
+                new ActionOrigin.Actor(),
+                AttackTargetPlans.singleEnemyWithinRange(1),
+                List.of(new AttackEffect.Condition(
+                    Conditions.POISON,
+                    false
+                ))
+            )
+        );
+
+        engine.execute(new PlayCardActionCommand(SOURCE));
+        CommandResult result = engine.execute(
+            new ChooseFigureTargetsCommand(List.of(TARGET))
+        );
+
+        assertTrue(result.events().stream()
+            .noneMatch(ConditionAppliedEvent.class::isInstance));
+        assertFalse(state.hasFigure(TARGET));
+    }
+
     private static ScenarioEngine engine(
         ScenarioState state,
         AttackAbility attack
@@ -317,6 +395,10 @@ class ScenarioEngineAttackTest {
     }
 
     private static ScenarioState scenario() {
+        return scenario(10);
+    }
+
+    private static ScenarioState scenario(int targetHealth) {
         HexPosition attackerPosition = new HexPosition(0, 0);
         HexPosition targetPosition = new HexPosition(1, 0);
         HexBoard board = new HexBoard(
@@ -334,10 +416,13 @@ class ScenarioEngineAttackTest {
             attackerPosition
         );
         state.addFigure(
-            monster(TARGET, 10),
+            monster(TARGET, targetHealth),
             targetPosition
         );
-        state.setActiveFigure(ATTACKER);
+        state.startNextRound(List.of(
+            new TurnOrderEntry(ATTACKER, 50),
+            new TurnOrderEntry(TARGET, 60)
+        ));
         return state;
     }
 }

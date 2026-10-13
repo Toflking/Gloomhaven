@@ -61,6 +61,30 @@ public final class ScenarioEventHandler {
                     event.selection(),
                     event.previews()
                 );
+            case DamageTargetChoiceRequestedEvent event ->
+                interactionController.beginDamageTargetChoice(
+                    event.actorId(),
+                    event.selection(),
+                    event.previews()
+                );
+            case DamageAreaPlacementRequestedEvent event ->
+                interactionController.beginDamageAreaPlacementChoice(
+                    event.actorId(),
+                    event.selection(),
+                    event.previews()
+                );
+            case ConditionTargetChoiceRequestedEvent event ->
+                interactionController.beginConditionTargetChoice(
+                    event.actorId(),
+                    event.selection(),
+                    event.previews()
+                );
+            case ConditionAreaPlacementRequestedEvent event ->
+                interactionController.beginConditionAreaPlacementChoice(
+                    event.actorId(),
+                    event.selection(),
+                    event.previews()
+                );
             case UndoPerformedEvent event ->
                 interactionController.restoreAfterUndo(event);
             case ActionFinishedEvent ignored ->
@@ -73,7 +97,13 @@ public final class ScenarioEventHandler {
             }
             case FigureDefeatedEvent ignored -> {
             }
+            case FigureHealedEvent ignored -> {
+            }
             case FigureMovedEvent ignored -> {
+            }
+            case ConditionAppliedEvent ignored -> {
+            }
+            case ConditionRemovedEvent ignored -> {
             }
             case TurnEndedEvent ignored -> {
             }

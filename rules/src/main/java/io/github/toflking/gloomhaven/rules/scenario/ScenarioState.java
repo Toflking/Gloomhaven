@@ -19,8 +19,9 @@ public class ScenarioState {
     private final Map<FigureId, HexPosition> positions;
     private final Collection<Figure> figureView;
 
+    private RoundState currentRound;
+
     private ScenarioPhase phase;
-    private FigureId activeFigure;
 
     private ActionExecution execution;
 
@@ -29,6 +30,7 @@ public class ScenarioState {
         this.figures = new HashMap<>();
         this.positions = new HashMap<>();
         this.figureView = Collections.unmodifiableCollection(figures.values());
+        this.currentRound = null;
         this.phase = ScenarioPhase.TURN_EXECUTION;
     }
 
@@ -40,8 +42,18 @@ public class ScenarioState {
         return phase;
     }
 
-    public FigureId activeFigure() {
-        return activeFigure;
+    public RoundState currentRound() {
+        return currentRound;
+    }
+
+    public void startNextRound(List<TurnOrderEntry> turnOrder) {
+        Objects.requireNonNull(turnOrder, "turnOrder");
+        this.currentRound = new RoundState(
+            currentRound == null
+                ? 1
+                : currentRound.roundNumber() + 1,
+            turnOrder
+        );
     }
 
     public void addFigure(Figure figure, HexPosition position) {
@@ -120,16 +132,6 @@ public class ScenarioState {
         figure.heal(amount);
     }
 
-    public void setActiveFigure(FigureId figureId) {
-        if (!figures.containsKey(figureId)) {
-            throw new IllegalArgumentException(
-                "Unknown active figure: " + figureId
-            );
-        }
-
-        activeFigure = figureId;
-    }
-
     public ActionExecution execution() {
         return execution;
     }
@@ -169,8 +171,9 @@ public class ScenarioState {
         return new ScenarioSnapshot(
             figureSnapshots,
             positions,
+            Optional.ofNullable(currentRound)
+                .map(RoundState::snapshot),
             phase,
-            Optional.ofNullable(activeFigure),
             Optional.ofNullable(execution)
                 .map(ActionExecution::snapshot)
         );
@@ -196,8 +199,10 @@ public class ScenarioState {
         positions.clear();
         positions.putAll(snapshot.positions());
 
+        currentRound = snapshot.currentRound()
+            .map(RoundState::restore)
+            .orElse(null);
         phase = snapshot.phase();
-        activeFigure = snapshot.activeFigure().orElse(null);
         execution = snapshot.execution()
             .map(ActionExecution::restore)
             .orElse(null);

@@ -4,6 +4,7 @@ import io.github.toflking.gloomhaven.rules.ability.attack.ActionOrigin;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetPlan;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.DuplicatePolicy;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.TargetSelectionMode;
+import io.github.toflking.gloomhaven.rules.ability.attack.targeting.VisibilityPolicy;
 import io.github.toflking.gloomhaven.rules.execution.ActionExecution;
 import io.github.toflking.gloomhaven.rules.execution.choice.PendingAreaChoice;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
@@ -29,13 +30,13 @@ public final class TargetValidator {
 
         if (targets.size() < choice.selection().minimumTargets()) {
             return ValidationResult.invalid(
-                "Too few attack targets were selected"
+                "Too few targets were selected"
             );
         }
 
         if (targets.size() > choice.selection().maximumTargets()) {
             return ValidationResult.invalid(
-                "Too many attack targets were selected"
+                "Too many targets were selected"
             );
         }
 
@@ -44,7 +45,7 @@ public final class TargetValidator {
             && (targets.size() != choice.selection().eligibleTargets().size()
             || !distinctTargets.equals(choice.selection().eligibleTargets()))) {
             return ValidationResult.invalid(
-                "Fixed attack targets cannot be changed"
+                "Fixed targets cannot be changed"
             );
         }
 
@@ -58,13 +59,13 @@ public final class TargetValidator {
         for (FigureId target : targets) {
             if (!choice.selection().eligibleTargets().contains(target)) {
                 return ValidationResult.invalid(
-                    "Selected figure is not an eligible attack target"
+                    "Selected figure is not an eligible target"
                 );
             }
 
             if (!state.hasFigure(target)) {
                 return ValidationResult.invalid(
-                    "Selected attack target is no longer in the scenario"
+                    "Selected target is no longer in the scenario"
                 );
             }
         }
@@ -112,6 +113,7 @@ public final class TargetValidator {
 
         TargetPlan targeting;
         ActionOrigin origin;
+        VisibilityPolicy visibilityPolicy;
         switch (choice) {
             case PendingAreaChoice.Attack ignored -> {
                 targeting = execution.attackExecution()
@@ -120,6 +122,9 @@ public final class TargetValidator {
                 origin = execution.attackExecution()
                     .attack()
                     .origin();
+                visibilityPolicy = execution.attackExecution()
+                    .attack()
+                    .visibilityPolicy();
             }
             case PendingAreaChoice.Heal ignored -> {
                 targeting = execution.healExecution()
@@ -128,6 +133,31 @@ public final class TargetValidator {
                 origin = execution.healExecution()
                     .heal()
                     .origin();
+                visibilityPolicy = execution.healExecution()
+                    .heal()
+                    .visibilityPolicy();
+            }
+            case PendingAreaChoice.Damage ignored -> {
+                targeting = execution.damageExecution()
+                    .damage()
+                    .targeting();
+                origin = execution.damageExecution()
+                    .damage()
+                    .origin();
+                visibilityPolicy = execution.damageExecution()
+                    .damage()
+                    .visibilityPolicy();
+            }
+            case PendingAreaChoice.Condition ignored -> {
+                targeting = execution.conditionExecution()
+                    .condition()
+                    .targeting();
+                origin = execution.conditionExecution()
+                    .condition()
+                    .origin();
+                visibilityPolicy = execution.conditionExecution()
+                    .condition()
+                    .visibilityPolicy();
             }
         }
 
@@ -140,7 +170,8 @@ public final class TargetValidator {
         List<FigureId> targets = new TargetResolver(
             state,
             execution,
-            origin
+            origin,
+            visibilityPolicy
         ).resolveAreaTargets(areaPlan, resolvedPlacement.affectedHexes());
 
         if (targets.isEmpty()) {

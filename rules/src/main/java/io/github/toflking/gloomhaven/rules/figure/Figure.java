@@ -1,8 +1,10 @@
 package io.github.toflking.gloomhaven.rules.figure;
 
+import io.github.toflking.gloomhaven.rules.conditions.Conditions;
 import io.github.toflking.gloomhaven.rules.figure.identities.FigureIdentity;
 
 import java.util.Objects;
+import java.util.Set;
 
 public final class Figure {
     private final FigureId id;
@@ -14,7 +16,7 @@ public final class Figure {
 
     private final HealthState health;
     private final ConditionState conditions;
-
+    private final Set<Conditions.ConditionId> conditionImmunities;
 
     public Figure(
         FigureId id,
@@ -22,7 +24,30 @@ public final class Figure {
         FigureIdentity identity,
         FigureOrigin origin,
         FactionId factionId,
-        HealthState health, ConditionState conditions
+        HealthState health,
+        ConditionState conditions
+    ) {
+        this(
+            id,
+            definitionId,
+            identity,
+            origin,
+            factionId,
+            health,
+            conditions,
+            Set.of()
+        );
+    }
+
+    public Figure(
+        FigureId id,
+        FigureDefinitionId definitionId,
+        FigureIdentity identity,
+        FigureOrigin origin,
+        FactionId factionId,
+        HealthState health,
+        ConditionState conditions,
+        Set<Conditions.ConditionId> conditionImmunities
     ) {
         this.id = Objects.requireNonNull(id, "id");
         this.definitionId = Objects.requireNonNull(definitionId, "definitionId");
@@ -31,6 +56,12 @@ public final class Figure {
         this.factionId = Objects.requireNonNull(factionId, "factionId");
         this.health = Objects.requireNonNull(health, "health");
         this.conditions = Objects.requireNonNull(conditions, "conditions");
+        this.conditionImmunities = Set.copyOf(
+            Objects.requireNonNull(
+                conditionImmunities,
+                "conditionImmunities"
+            )
+        );
     }
 
     public FigureId id() {
@@ -83,5 +114,15 @@ public final class Figure {
         }
 
         health.setCurrentHealth(Math.min(health.maximumHealth, health.currentHealth() + amount));
+    }
+
+    public Set<Conditions.ConditionId> conditionImmunities() {
+        return conditionImmunities;
+    }
+
+    public boolean isImmuneTo(Conditions.ConditionId conditionId) {
+        return conditionImmunities.contains(
+            Objects.requireNonNull(conditionId, "conditionId")
+        );
     }
 }

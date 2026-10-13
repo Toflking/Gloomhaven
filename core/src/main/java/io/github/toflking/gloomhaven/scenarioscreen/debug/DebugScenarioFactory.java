@@ -5,6 +5,8 @@ import io.github.toflking.gloomhaven.rules.board.HexEdge;
 import io.github.toflking.gloomhaven.rules.board.HexPosition;
 import io.github.toflking.gloomhaven.rules.board.HexTile;
 import io.github.toflking.gloomhaven.rules.board.TerrainType;
+import io.github.toflking.gloomhaven.rules.conditions.ActiveCondition;
+import io.github.toflking.gloomhaven.rules.conditions.Conditions;
 import io.github.toflking.gloomhaven.rules.figure.CharacterTypeId;
 import io.github.toflking.gloomhaven.rules.figure.ConditionState;
 import io.github.toflking.gloomhaven.rules.figure.FactionId;
@@ -19,6 +21,7 @@ import io.github.toflking.gloomhaven.rules.figure.identities.CharacterIdentity;
 import io.github.toflking.gloomhaven.rules.figure.identities.FigureIdentity;
 import io.github.toflking.gloomhaven.rules.figure.identities.MonsterIdentity;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioState;
+import io.github.toflking.gloomhaven.rules.scenario.TurnOrderEntry;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -71,8 +74,26 @@ public final class DebugScenarioFactory {
             -1,
             0
         );
+        state.damageFigure(new FigureId("ally-1"), 4);
+        state.figure(new FigureId("ally-1")).conditions().addCondition(
+            Conditions.POISON.id(),
+            new ActiveCondition.ConditionExpiration.UntilRemoved()
+        );
+        state.figure(new FigureId("ally-1")).conditions().addCondition(
+            Conditions.WOUND.id(),
+            new ActiveCondition.ConditionExpiration.UntilRemoved()
+        );
 
-        state.setActiveFigure(playerId);
+        state.startNextRound(List.of(
+            new TurnOrderEntry(playerId, 50),
+            new TurnOrderEntry(new FigureId("ally-1"), 50),
+            new TurnOrderEntry(new FigureId("monster-1"), 60),
+            new TurnOrderEntry(new FigureId("monster-2"), 60),
+            new TurnOrderEntry(new FigureId("monster-3"), 60),
+            new TurnOrderEntry(new FigureId("monster-4"), 60),
+            new TurnOrderEntry(new FigureId("monster-5"), 60),
+            new TurnOrderEntry(new FigureId("monster-6"), 60)
+        ));
         return state;
     }
 
@@ -116,7 +137,8 @@ public final class DebugScenarioFactory {
                 FigureOrigin.SCENARIO,
                 factionId,
                 new HealthState(maximumHealth),
-                new ConditionState(List.of())
+                new ConditionState(Map.of()),
+                Set.of()
             ),
             new HexPosition(q, r)
         );

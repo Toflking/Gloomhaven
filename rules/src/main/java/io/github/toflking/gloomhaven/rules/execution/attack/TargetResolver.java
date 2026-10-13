@@ -3,6 +3,9 @@ package io.github.toflking.gloomhaven.rules.execution.attack;
 import io.github.toflking.gloomhaven.rules.ability.attack.ActionOrigin;
 import io.github.toflking.gloomhaven.rules.ability.attack.EffectiveAttack;
 import io.github.toflking.gloomhaven.rules.ability.attack.effect.AttackEffect;
+import io.github.toflking.gloomhaven.rules.ability.attack.effect.DamageEffect;
+import io.github.toflking.gloomhaven.rules.ability.attack.effect.HealEffect;
+import io.github.toflking.gloomhaven.rules.ability.attack.effect.TargetEffectTiming;
 import io.github.toflking.gloomhaven.rules.ability.attack.targeting.*;
 import io.github.toflking.gloomhaven.rules.board.HexPattern;
 import io.github.toflking.gloomhaven.rules.board.HexPosition;
@@ -12,6 +15,9 @@ import io.github.toflking.gloomhaven.rules.execution.AbilityExpressionContext;
 import io.github.toflking.gloomhaven.rules.execution.ActionExecution;
 import io.github.toflking.gloomhaven.rules.execution.attack.preview.AttackPreview;
 import io.github.toflking.gloomhaven.rules.execution.attack.preview.HealPreview;
+import io.github.toflking.gloomhaven.rules.execution.attack.preview.DamagePreview;
+import io.github.toflking.gloomhaven.rules.execution.attack.preview.ConditionPreview;
+import io.github.toflking.gloomhaven.rules.execution.attack.preview.EffectPreview;
 import io.github.toflking.gloomhaven.rules.figure.Figure;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import io.github.toflking.gloomhaven.rules.figure.identities.*;
@@ -33,6 +39,7 @@ public final class TargetResolver {
     private final ActionExecution execution;
     private final HexPosition attackOrigin;
     private final AbilityExpressionContext expressionContext;
+    private final VisibilityPolicy visibilityPolicy;
 
     public TargetResolver(
         ScenarioState state,
@@ -41,7 +48,8 @@ public final class TargetResolver {
         this(
             state,
             execution,
-            execution.attackExecution().attack().origin()
+            execution.attackExecution().attack().origin(),
+            execution.attackExecution().attack().visibilityPolicy()
         );
     }
 
@@ -49,6 +57,20 @@ public final class TargetResolver {
         ScenarioState state,
         ActionExecution execution,
         ActionOrigin origin
+    ) {
+        this(
+            state,
+            execution,
+            origin,
+            VisibilityPolicy.RESPECT_ENEMY_INVISIBILITY
+        );
+    }
+
+    public TargetResolver(
+        ScenarioState state,
+        ActionExecution execution,
+        ActionOrigin origin,
+        VisibilityPolicy visibilityPolicy
     ) {
         this.state = Objects.requireNonNull(state, "state");
         this.execution = Objects.requireNonNull(execution, "execution");
@@ -59,6 +81,10 @@ public final class TargetResolver {
             state,
             execution.frame(),
             execution.memory()
+        );
+        this.visibilityPolicy = Objects.requireNonNull(
+            visibilityPolicy,
+            "visibilityPolicy"
         );
     }
 
@@ -97,6 +123,36 @@ public final class TargetResolver {
         );
     }
 
+    public ResolvedDamageChoice resolveDamage(TargetPlan plan) {
+        Objects.requireNonNull(plan, "plan");
+
+        FigureTargetSelection selection = resolveSelection(plan);
+        return new ResolvedDamageChoice(
+            selection,
+            damagePreviews(plan, selection)
+        );
+    }
+
+    public ResolvedConditionChoice resolveCondition(TargetPlan plan) {
+        Objects.requireNonNull(plan, "plan");
+
+        FigureTargetSelection selection = resolveSelection(plan);
+        return new ResolvedConditionChoice(
+            selection,
+            conditionPreviews(plan, selection)
+        );
+    }
+
+    private FigureTargetSelection resolveSelection(TargetPlan plan) {
+        return switch (plan) {
+            case TargetPlan.Query query -> resolveQuery(query);
+            case TargetPlan.Area area -> resolveArea(area);
+            case TargetPlan.PrimaryAndDerived ignored ->
+                throw unsupported(plan);
+            case TargetPlan.Chain ignored -> throw unsupported(plan);
+        };
+    }
+
     private Map<FigureId, AttackPreview> attackPreviews(
         TargetPlan plan,
         FigureTargetSelection selection
@@ -124,10 +180,19 @@ public final class TargetResolver {
                     effect.amount().evaluate(context)
                 ))
                 .sum();
-            boolean poisoned = state.figure(targetId)
+            Figure target = state.figure(targetId);
+            boolean poisoned = target
                 .conditions()
                 .contains(Conditions.POISON.id());
             int projectedDamage = attackValue + (poisoned ? 1 : 0);
+            List<Conditions.ConditionId> addedConditions = attack.effects()
+                .stream()
+                .filter(AttackEffect.Condition.class::isInstance)
+                .map(AttackEffect.Condition.class::cast)
+                .map(AttackEffect.Condition::condition)
+                .map(Conditions.ConditionDefinition::id)
+                .filter(condition -> !target.isImmuneTo(condition))
+                .toList();
 
             previews.put(targetId, new AttackPreview(
                 attackValue,
@@ -136,7 +201,8 @@ public final class TargetResolver {
                 pierce,
                 0,
                 poisoned,
-                projectedDamage
+                projectedDamage,
+                new EffectPreview(addedConditions, List.of())
             ));
         }
         return Map.copyOf(previews);
@@ -147,7 +213,6 @@ public final class TargetResolver {
         FigureTargetSelection selection
     ) {
         Map<FigureId, HealPreview> previews = new LinkedHashMap<>();
-
         int previewIndex = 0;
         for (FigureId targetId : previewTargets(plan, selection)) {
             AbilityExpressionContext context =
@@ -161,15 +226,115 @@ public final class TargetResolver {
             int healValue = execution.healExecution()
                 .previewAmount(context);
             Figure target = state.figure(targetId);
+            List<Conditions.ConditionId> addedConditions = execution
+                .healExecution()
+                .heal()
+                .effects()
+                .stream()
+                .filter(HealEffect.Condition.class::isInstance)
+                .map(HealEffect.Condition.class::cast)
+                .map(HealEffect.Condition::condition)
+                .map(Conditions.ConditionDefinition::id)
+                .filter(condition -> !target.isImmuneTo(condition))
+                .toList();
             boolean poisoned = target.conditions()
                 .contains(Conditions.POISON.id());
+            List<Conditions.ConditionId> removedConditions =
+                new java.util.ArrayList<>();
+            if (poisoned) {
+                removedConditions.add(Conditions.POISON.id());
+            }
+            if (target.conditions().contains(Conditions.WOUND.id())) {
+                removedConditions.add(Conditions.WOUND.id());
+            }
             int missingHealth = target.health().maximumHealth()
                 - target.health().currentHealth();
 
             previews.put(targetId, new HealPreview(
                 healValue,
                 poisoned,
-                poisoned ? 0 : Math.min(healValue, missingHealth)
+                poisoned ? 0 : Math.min(healValue, missingHealth),
+                new EffectPreview(addedConditions, removedConditions)
+            ));
+        }
+        return Map.copyOf(previews);
+    }
+
+    private Map<FigureId, DamagePreview> damagePreviews(
+        TargetPlan plan,
+        FigureTargetSelection selection
+    ) {
+        Map<FigureId, DamagePreview> previews = new LinkedHashMap<>();
+        List<DamageEffect> effects = execution
+            .damageExecution()
+            .damage()
+            .effects();
+
+        int previewIndex = 0;
+        for (FigureId targetId : previewTargets(plan, selection)) {
+            AbilityExpressionContext context =
+                AbilityExpressionContext.forTarget(
+                    state,
+                    execution.frame(),
+                    execution.memory(),
+                    targetId,
+                    previewIndex++
+                );
+            int damageValue = execution.damageExecution()
+                .previewAmount(context);
+            Figure target = state.figure(targetId);
+            boolean survivesDamage = damageValue
+                < target.health().currentHealth();
+            List<Conditions.ConditionId> addedConditions = effects.stream()
+                .filter(DamageEffect.ApplyCondition.class::isInstance)
+                .map(DamageEffect.ApplyCondition.class::cast)
+                .filter(effect -> effect.timing()
+                    == TargetEffectTiming.BEFORE_DAMAGE
+                    || survivesDamage)
+                .map(DamageEffect.ApplyCondition::condition)
+                .map(Conditions.ConditionDefinition::id)
+                .filter(condition -> !target.isImmuneTo(condition))
+                .toList();
+            List<Conditions.ConditionId> removedConditions = effects.stream()
+                .filter(DamageEffect.RemoveCondition.class::isInstance)
+                .map(DamageEffect.RemoveCondition.class::cast)
+                .filter(effect -> effect.timing()
+                    == TargetEffectTiming.BEFORE_DAMAGE
+                    || survivesDamage)
+                .map(DamageEffect.RemoveCondition::condition)
+                .filter(target.conditions()::contains)
+                .toList();
+            previews.put(
+                targetId,
+                new DamagePreview(
+                    damageValue,
+                    damageValue,
+                    new EffectPreview(
+                        addedConditions,
+                        removedConditions
+                    )
+                )
+            );
+        }
+        return Map.copyOf(previews);
+    }
+
+    private Map<FigureId, ConditionPreview> conditionPreviews(
+        TargetPlan plan,
+        FigureTargetSelection selection
+    ) {
+        List<Conditions.ConditionDefinition> conditions = execution
+            .conditionExecution()
+            .condition()
+            .conditions();
+        Map<FigureId, ConditionPreview> previews = new LinkedHashMap<>();
+        for (FigureId targetId : previewTargets(plan, selection)) {
+            Figure target = state.figure(targetId);
+            previews.put(targetId, new ConditionPreview(
+                conditions.stream()
+                    .map(Conditions.ConditionDefinition::id)
+                    .filter(condition -> !target.isImmuneTo(condition))
+                    .toList()
             ));
         }
         return Map.copyOf(previews);
@@ -215,6 +380,7 @@ public final class TargetResolver {
                     plan.candidates().lineOfSight(),
                     position
                 )
+                && isTargetableByActor(figure)
                 && matchesPredicate(
                     plan.candidates().figures(),
                     figure
@@ -386,6 +552,7 @@ public final class TargetResolver {
                 .thenComparingInt(HexPosition::r))
             .map(state::figureAt)
             .flatMap(java.util.Optional::stream)
+            .filter(this::isTargetableByActor)
             .filter(figure -> matchesPredicate(plan.targets(), figure))
             .map(Figure::id)
             .filter(id -> matchesLineOfSight(
@@ -393,6 +560,17 @@ public final class TargetResolver {
                 state.positionOf(id)
             ))
             .toList();
+    }
+
+    private boolean isTargetableByActor(Figure candidate) {
+        if (visibilityPolicy
+            == VisibilityPolicy.IGNORE_ENEMY_INVISIBILITY) {
+            return true;
+        }
+        Figure actor = state.figure(execution.actor());
+        boolean enemy = !candidate.factionId().equals(actor.factionId());
+        return !enemy
+            || !candidate.conditions().contains(Conditions.INVISIBLE.id());
     }
 
     private Set<HexPosition> targetableAreaHexes(
@@ -538,10 +716,7 @@ public final class TargetResolver {
             case FigurePredicate.Identity identity ->
                 matchesIdentity(identity.identity(), candidate);
             case FigurePredicate.HasCondition condition ->
-                throw new IllegalStateException(
-                    "Condition targeting is not available on Figure yet: "
-                        + condition.condition().value()
-                );
+                candidate.conditions().contains(condition.condition());
             case FigurePredicate.Contextual contextual ->
                 throw new IllegalStateException(
                     "No resolver is registered for contextual target predicate: "

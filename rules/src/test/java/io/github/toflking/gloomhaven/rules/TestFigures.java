@@ -13,7 +13,7 @@ import io.github.toflking.gloomhaven.rules.figure.MonsterTypeId;
 import io.github.toflking.gloomhaven.rules.figure.identities.CharacterIdentity;
 import io.github.toflking.gloomhaven.rules.figure.identities.MonsterIdentity;
 
-import java.util.List;
+import java.util.Map;
 
 public final class TestFigures {
     private static final FactionId CHARACTERS =
@@ -32,7 +32,7 @@ public final class TestFigures {
             FigureOrigin.SCENARIO,
             CHARACTERS,
             new HealthState(maximumHealth),
-            new ConditionState(List.of())
+            new ConditionState(Map.of())
         );
     }
 
@@ -47,7 +47,7 @@ public final class TestFigures {
             FigureOrigin.SCENARIO,
             MONSTERS,
             new HealthState(maximumHealth),
-            new ConditionState(List.of())
+            new ConditionState(Map.of())
         );
     }
 }

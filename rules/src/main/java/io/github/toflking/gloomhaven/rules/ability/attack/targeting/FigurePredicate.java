@@ -1,5 +1,6 @@
 package io.github.toflking.gloomhaven.rules.ability.attack.targeting;
 
+import io.github.toflking.gloomhaven.rules.conditions.Conditions;
 import io.github.toflking.gloomhaven.rules.figure.identities.FigureIdentity;
 
 import java.util.List;
@@ -46,7 +47,7 @@ public sealed interface FigurePredicate
         }
     }
 
-    record HasCondition(ConditionId condition)
+    record HasCondition(Conditions.ConditionId condition)
         implements FigurePredicate {
 
         public HasCondition {
@@ -91,13 +92,6 @@ public sealed interface FigurePredicate
         ENEMY,
         SELF,
         NOT_SELF
-    }
-
-    record ConditionId(String value) {
-
-        public ConditionId {
-            requireIdentifier(value, "Condition id");
-        }
     }
 
     record PredicateId(String value) {

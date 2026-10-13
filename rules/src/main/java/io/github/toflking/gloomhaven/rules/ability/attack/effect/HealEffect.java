@@ -1,21 +1,37 @@
 package io.github.toflking.gloomhaven.rules.ability.attack.effect;
 
-import io.github.toflking.gloomhaven.rules.ability.attack.targeting.FigurePredicate;
+import io.github.toflking.gloomhaven.rules.conditions.Conditions;
 
 import java.util.Objects;
 
 public sealed interface HealEffect
-    permits HealEffect.Condition {
+    permits HealEffect.Condition,
+    HealEffect.Bless {
+
+    TargetEffectTiming timing();
+
+    boolean optional();
 
     record Condition(
-        FigurePredicate.ConditionId condition,
-        TargetEffectTiming timing,
+        Conditions.ConditionDefinition condition,
         boolean optional
     ) implements HealEffect {
 
         public Condition {
             Objects.requireNonNull(condition, "condition");
-            Objects.requireNonNull(timing, "timing");
+        }
+
+        @Override
+        public TargetEffectTiming timing() {
+            return TargetEffectTiming.AFTER_HEAL;
+        }
+    }
+
+    record Bless(boolean optional) implements HealEffect {
+
+        @Override
+        public TargetEffectTiming timing() {
+            return TargetEffectTiming.AFTER_HEAL;
         }
     }
 }

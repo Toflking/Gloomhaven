@@ -2,7 +2,14 @@ package io.github.toflking.gloomhaven.rules.engine;
 
 import io.github.toflking.gloomhaven.rules.ability.Ability;
 import io.github.toflking.gloomhaven.rules.ability.attack.AttackAbility;
+import io.github.toflking.gloomhaven.rules.ability.attack.effect.AttackEffect;
+import io.github.toflking.gloomhaven.rules.ability.attack.effect.DamageEffect;
+import io.github.toflking.gloomhaven.rules.ability.attack.effect.HealEffect;
+import io.github.toflking.gloomhaven.rules.ability.attack.effect.TargetEffectTiming;
 import io.github.toflking.gloomhaven.rules.ability.heal.HealAbility;
+import io.github.toflking.gloomhaven.rules.ability.damage.DamageAbility;
+import io.github.toflking.gloomhaven.rules.ability.condition.ConditionAbility;
+import io.github.toflking.gloomhaven.rules.conditions.ActiveCondition;
 import io.github.toflking.gloomhaven.rules.conditions.Conditions;
 import io.github.toflking.gloomhaven.rules.execution.attack.*;
 import io.github.toflking.gloomhaven.rules.ability.movement.MoveAbility;
@@ -22,6 +29,8 @@ import io.github.toflking.gloomhaven.rules.execution.choice.PendingFigureTargetC
 import io.github.toflking.gloomhaven.rules.execution.choice.PendingMoveChoice;
 import io.github.toflking.gloomhaven.rules.execution.movement.MovePathValidator;
 import io.github.toflking.gloomhaven.rules.execution.heal.HealExecutionState;
+import io.github.toflking.gloomhaven.rules.execution.damage.DamageExecutionState;
+import io.github.toflking.gloomhaven.rules.execution.condition.ConditionExecutionState;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioPhase;
 import io.github.toflking.gloomhaven.rules.scenario.history.CommandHistory;
 import io.github.toflking.gloomhaven.rules.scenario.history.ScenarioSnapshot;
@@ -219,6 +228,10 @@ public final class ScenarioEngine {
                 resolveAttackTargets(validationResult.targets(), events);
             case PendingFigureTargetChoice.Heal ignored ->
                 resolveHealTargets(validationResult.targets(), events);
+            case PendingFigureTargetChoice.Damage ignored ->
+                resolveDamageTargets(validationResult.targets(), events);
+            case PendingFigureTargetChoice.Condition ignored ->
+                resolveConditionTargets(validationResult.targets(), events);
             default -> {
                 return CommandResult.rejected("There is no pending figure target choice");
             }
@@ -230,7 +243,7 @@ public final class ScenarioEngine {
     private CommandResult executeAreaSelection(ChooseAttackAreaCommand command) {
         if (state.phase() != ScenarioPhase.TURN_EXECUTION) {
             return CommandResult.rejected(
-                "An attack can only happen during turn execution"
+                "An area selection can only happen during turn execution"
             );
         }
 
@@ -243,7 +256,9 @@ public final class ScenarioEngine {
         }
 
         if (!(execution.pendingChoice() instanceof PendingAreaChoice choice)) {
-            return CommandResult.rejected("There is no attack area selection pending choice for this command");
+            return CommandResult.rejected(
+                "There is no pending area selection for this command"
+            );
         }
 
         List<GameEvent> events = new ArrayList<>();
@@ -265,8 +280,14 @@ public final class ScenarioEngine {
                 resolveAttackTargets(validationResult.targets(), events);
             case PendingAreaChoice.Heal ignored ->
                 resolveHealTargets(validationResult.targets(), events);
+            case PendingAreaChoice.Damage ignored ->
+                resolveDamageTargets(validationResult.targets(), events);
+            case PendingAreaChoice.Condition ignored ->
+                resolveConditionTargets(validationResult.targets(), events);
             default -> {
-                return CommandResult.rejected("There is no pending figure target choice");
+                return CommandResult.rejected(
+                    "There is no pending area choice"
+                );
             }
         }
 
@@ -279,7 +300,7 @@ public final class ScenarioEngine {
         CardAction action = cardCatalog.resolve(source);
 
         state.startActionExecution(
-            state.activeFigure(),
+            state.currentRound().activeFigure(),
             source,
             action.abilities()
         );
@@ -313,6 +334,9 @@ public final class ScenarioEngine {
             case MoveAbility move -> beginMove(move, events);
             case AttackAbility attack -> beginAttack(attack, events);
             case HealAbility heal -> beginHeal(heal, events);
+            case DamageAbility damage -> beginDamage(damage, events);
+            case ConditionAbility condition ->
+                beginCondition(condition, events);
             default -> throw new IllegalStateException(
                 "No executor is registered for ability type: "
                     + currentAbility.getClass().getName()
@@ -398,7 +422,8 @@ public final class ScenarioEngine {
         TargetResolver resolver = new TargetResolver(
             state,
             execution,
-            execution.healExecution().heal().origin()
+            execution.healExecution().heal().origin(),
+            execution.healExecution().heal().visibilityPolicy()
         );
         ResolvedHealChoice resolvedChoice = resolver.resolveHeal(heal.targeting());
 
@@ -433,6 +458,116 @@ public final class ScenarioEngine {
         }
     }
 
+    private void beginDamage(
+        DamageAbility damage,
+        List<GameEvent> events
+    ) {
+        ActionExecution execution = state.execution();
+        execution.beginDamage(
+            damage.effectiveDefinition(),
+            AbilityExpressionContext.withoutTarget(
+                state,
+                execution.frame(),
+                execution.memory()
+            )
+        );
+
+        TargetResolver resolver = new TargetResolver(
+            state,
+            execution,
+            damage.origin(),
+            damage.visibilityPolicy()
+        );
+        ResolvedDamageChoice resolvedChoice = resolver.resolveDamage(
+            damage.targeting()
+        );
+
+        switch (resolvedChoice.selection()) {
+            case FigureTargetSelection.FigureTargets figureTargets -> {
+                PendingFigureTargetChoice.Damage pendingChoice =
+                    new PendingFigureTargetChoice.Damage(
+                        execution.actor(),
+                        figureTargets,
+                        resolvedChoice.previews()
+                    );
+                execution.setPendingChoice(pendingChoice);
+                events.add(new DamageTargetChoiceRequestedEvent(
+                    pendingChoice.actorId(),
+                    pendingChoice.selection(),
+                    pendingChoice.previews()
+                ));
+            }
+            case FigureTargetSelection.AreaPlacement areaPlacement -> {
+                PendingAreaChoice.Damage pendingChoice =
+                    new PendingAreaChoice.Damage(
+                        execution.actor(),
+                        areaPlacement,
+                        resolvedChoice.previews()
+                    );
+                execution.setPendingChoice(pendingChoice);
+                events.add(new DamageAreaPlacementRequestedEvent(
+                    pendingChoice.actorId(),
+                    pendingChoice.selection(),
+                    pendingChoice.previews()
+                ));
+            }
+            default -> throw new UnsupportedOperationException(
+                resolvedChoice.selection().toString()
+            );
+        }
+    }
+
+    private void beginCondition(
+        ConditionAbility condition,
+        List<GameEvent> events
+    ) {
+        ActionExecution execution = state.execution();
+        execution.beginCondition(condition.effectiveDefinition());
+
+        TargetResolver resolver = new TargetResolver(
+            state,
+            execution,
+            condition.origin(),
+            condition.visibilityPolicy()
+        );
+        ResolvedConditionChoice resolvedChoice =
+            resolver.resolveCondition(condition.targeting());
+
+        switch (resolvedChoice.selection()) {
+            case FigureTargetSelection.FigureTargets figureTargets -> {
+                PendingFigureTargetChoice.Condition pendingChoice =
+                    new PendingFigureTargetChoice.Condition(
+                        execution.actor(),
+                        figureTargets,
+                        resolvedChoice.previews()
+                    );
+                execution.setPendingChoice(pendingChoice);
+                events.add(new ConditionTargetChoiceRequestedEvent(
+                    pendingChoice.actorId(),
+                    pendingChoice.selection(),
+                    pendingChoice.previews()
+                ));
+            }
+            case FigureTargetSelection.AreaPlacement areaPlacement -> {
+                PendingAreaChoice.Condition pendingChoice =
+                    new PendingAreaChoice.Condition(
+                        execution.actor(),
+                        areaPlacement,
+                        resolvedChoice.previews()
+                    );
+                execution.setPendingChoice(pendingChoice);
+                events.add(new ConditionAreaPlacementRequestedEvent(
+                    pendingChoice.actorId(),
+                    pendingChoice.selection(),
+                    pendingChoice.previews()
+                ));
+            }
+            default -> throw new UnsupportedOperationException(
+                resolvedChoice.selection().toString()
+            );
+        }
+    }
+
     private void resolveAttackTargets(
         List<FigureId> targets,
         List<GameEvent> events
@@ -448,6 +583,8 @@ public final class ScenarioEngine {
                 execution.memory()
             )
         );
+
+        List<AttackEffect> effects = attackExecution.attack().effects();
 
         while (!attackExecution.isFinished()) {
             AttackInstance attackInstance =
@@ -467,10 +604,9 @@ public final class ScenarioEngine {
                     attackInstance.sequenceIndex()
                 );
 
-            int attackValue =
-                attackExecution.amountForCurrentAttack(context);
-
             Figure target = state.figure(attackInstance.targetId());
+
+            int attackValue = attackExecution.amountForCurrentAttack(context);
             int damage = attackValue
                 + (target.conditions().contains(Conditions.POISON.id())
                     ? 1
@@ -488,6 +624,21 @@ public final class ScenarioEngine {
                 execution.actor()
             ));
 
+            if (!target.isDefeated()) {
+                applyAttackEffectsAt(
+                    TargetEffectTiming.AFTER_DAMAGE,
+                    effects,
+                    target,
+                    events
+                );
+                applyAttackEffectsAt(
+                    TargetEffectTiming.AFTER_ATTACK,
+                    effects,
+                    target,
+                    events
+                );
+            }
+
             if (target.isDefeated()) {
                 HexPosition defeatedAt = state.positionOf(target.id());
                 events.add(new FigureDefeatedEvent(
@@ -504,12 +655,79 @@ public final class ScenarioEngine {
         continueExecution(events);
     }
 
+    private void applyAttackEffectsAt(
+        TargetEffectTiming timing,
+        List<AttackEffect> effects,
+        Figure target,
+        List<GameEvent> events
+    ) {
+        effects.stream()
+            .filter(effect -> effect.timing() == timing)
+            .forEach(effect -> applyAttackEffect(effect, target, events));
+    }
+
+    private void applyAttackEffect(
+        AttackEffect effect,
+        Figure target,
+        List<GameEvent> events
+    ) {
+        switch (effect) {
+            case AttackEffect.Condition condition -> {
+                applyCondition(condition.condition(), target, events);
+
+            }
+            case AttackEffect.Curse ignored ->
+                throw unsupportedAttackEffect(
+                    effect,
+                    "attack modifier decks are not implemented yet"
+                );
+            case AttackEffect.ForcedMovement ignored ->
+                throw unsupportedAttackEffect(
+                    effect,
+                    "forced movement execution is not implemented yet"
+                );
+            case AttackEffect.ExecuteAfterAttack ignored ->
+                throw unsupportedAttackEffect(
+                    effect,
+                    "execute effects are not implemented yet"
+                );
+            case AttackEffect.Contextual ignored ->
+                throw unsupportedAttackEffect(
+                    effect,
+                    "no contextual attack-effect resolver is registered"
+                );
+            case AttackEffect.Pierce ignored ->
+                throw new IllegalStateException(
+                    "Pierce must be resolved during damage calculation"
+                );
+        }
+    }
+
+    private static UnsupportedOperationException unsupportedAttackEffect(
+        AttackEffect effect,
+        String reason
+    ) {
+        return new UnsupportedOperationException(
+            "Cannot resolve " + effect.getClass().getSimpleName()
+                + ": " + reason
+        );
+    }
+
+    private int calculateExpirationRound(FigureId targetId) {
+        if (state.currentRound().currentTurnIndex() >= state.currentRound().turnIndexForFigure(targetId)) {
+            return state.currentRound().roundNumber() + 1;
+        } else {
+            return state.currentRound().roundNumber();
+        }
+    }
+
     private void resolveHealTargets(
         List<FigureId> targets,
         List<GameEvent> events
     ) {
         ActionExecution execution = state.execution();
         HealExecutionState healExecution = execution.healExecution();
+        List<HealEffect> effects = healExecution.heal().effects();
         healExecution.setTargets(
             targets,
             AbilityExpressionContext.withoutTarget(
@@ -539,17 +757,262 @@ public final class ScenarioEngine {
 
             boolean poisoned = target.conditions()
                 .remove(Conditions.POISON.id());
-            target.conditions().remove(Conditions.WOUND.id());
+            boolean wounded = target.conditions().remove(Conditions.WOUND.id());
             if (!poisoned) {
                 state.healFigure(figureId, healAmount);
             }
 
             execution.markAbilityPerformed();
             healExecution.completeCurrentTarget();
+
+            events.add(new FigureHealedEvent(
+                figureId,
+                poisoned ? 0 : healAmount,
+                target.health().currentHealth(),
+                execution.actor()
+            ));
+
+            if (poisoned) {
+                events.add(new ConditionRemovedEvent(
+                    figureId,
+                    Conditions.POISON.id()
+                ));
+            }
+            if (wounded) {
+                events.add(new ConditionRemovedEvent(
+                    figureId,
+                    Conditions.WOUND.id()
+                ));
+            }
+
+            applyHealEffectsAt(
+                TargetEffectTiming.AFTER_HEAL,
+                effects,
+                target,
+                events
+            );
         }
 
         execution.completeCurrentAbility();
         continueExecution(events);
+    }
+
+    private void applyHealEffectsAt(
+        TargetEffectTiming timing,
+        List<HealEffect> effects,
+        Figure target,
+        List<GameEvent> events
+    ) {
+        effects.stream()
+            .filter(effect -> effect.timing() == timing)
+            .forEach(effect -> applyHealEffect(effect, target, events));
+    }
+
+    private void applyHealEffect(
+        HealEffect effect,
+        Figure target,
+        List<GameEvent> events
+    ) {
+        switch (effect) {
+            case HealEffect.Condition condition ->
+                applyCondition(condition.condition(), target, events);
+            case HealEffect.Bless ignored ->
+                throw unsupportedHealEffect(
+                    effect,
+                    "attack modifier decks are not implemented yet"
+                );
+        }
+    }
+
+    private static UnsupportedOperationException unsupportedHealEffect(
+        HealEffect effect,
+        String reason
+    ) {
+        return new UnsupportedOperationException(
+            "Cannot resolve " + effect.getClass().getSimpleName()
+                + ": " + reason
+        );
+    }
+
+    private void resolveDamageTargets(
+        List<FigureId> targets,
+        List<GameEvent> events
+    ) {
+        ActionExecution execution = state.execution();
+        DamageExecutionState damageExecution = execution.damageExecution();
+        List<DamageEffect> effects = damageExecution.damage().effects();
+        damageExecution.setTargets(
+            targets,
+            AbilityExpressionContext.withoutTarget(
+                state,
+                execution.frame(),
+                execution.memory()
+            )
+        );
+
+        while (!damageExecution.isFinished()) {
+            FigureId targetId = damageExecution.currentTarget();
+            if (!state.hasFigure(targetId)) {
+                damageExecution.completeCurrentTarget();
+                continue;
+            }
+
+            AbilityExpressionContext context =
+                AbilityExpressionContext.forTarget(
+                    state,
+                    execution.frame(),
+                    execution.memory(),
+                    targetId,
+                    damageExecution.nextTargetIndex()
+                );
+            int amount = damageExecution.amountForCurrentTarget(context);
+            Figure target = state.figure(targetId);
+
+            applyDamageEffectsAt(
+                TargetEffectTiming.BEFORE_DAMAGE,
+                effects,
+                target,
+                events
+            );
+
+            state.damageFigure(targetId, amount);
+            execution.markAbilityPerformed();
+
+            events.add(new FigureDamagedEvent(
+                targetId,
+                amount,
+                target.health().currentHealth(),
+                execution.actor()
+            ));
+
+            if (!target.isDefeated()) {
+                applyDamageEffectsAt(
+                    TargetEffectTiming.AFTER_DAMAGE,
+                    effects,
+                    target,
+                    events
+                );
+            }
+
+            if (target.isDefeated()) {
+                HexPosition defeatedAt = state.positionOf(targetId);
+                events.add(new FigureDefeatedEvent(targetId, defeatedAt));
+                state.removeFigure(targetId);
+            }
+            damageExecution.completeCurrentTarget();
+        }
+
+        execution.completeCurrentAbility();
+        continueExecution(events);
+    }
+
+    private void applyDamageEffectsAt(
+        TargetEffectTiming timing,
+        List<DamageEffect> effects,
+        Figure target,
+        List<GameEvent> events
+    ) {
+        effects.stream()
+            .filter(effect -> effect.timing() == timing)
+            .forEach(effect -> applyDamageEffect(effect, target, events));
+    }
+
+    private void applyDamageEffect(
+        DamageEffect effect,
+        Figure target,
+        List<GameEvent> events
+    ) {
+        switch (effect) {
+            case DamageEffect.ApplyCondition condition ->
+                applyCondition(condition.condition(), target, events);
+            case DamageEffect.RemoveCondition removeCondition -> {
+                if (target.conditions().remove(removeCondition.condition())) {
+                    events.add(new ConditionRemovedEvent(
+                        target.id(),
+                        removeCondition.condition()
+                    ));
+                }
+            }
+            case DamageEffect.Curse ignored ->
+                throw unsupportedDamageEffect(
+                    effect,
+                    "attack modifier decks are not implemented yet"
+                );
+            case DamageEffect.ForcedMovement ignored ->
+                throw unsupportedDamageEffect(
+                    effect,
+                    "forced movement execution is not implemented yet"
+                );
+            case DamageEffect.Contextual ignored ->
+                throw unsupportedDamageEffect(
+                    effect,
+                    "no contextual damage-effect resolver is registered"
+                );
+        }
+    }
+
+    private static UnsupportedOperationException unsupportedDamageEffect(
+        DamageEffect effect,
+        String reason
+    ) {
+        return new UnsupportedOperationException(
+            "Cannot resolve " + effect.getClass().getSimpleName()
+                + ": " + reason
+        );
+    }
+
+    private void resolveConditionTargets(
+        List<FigureId> targets,
+        List<GameEvent> events
+    ) {
+        ActionExecution execution = state.execution();
+        ConditionExecutionState conditionExecution =
+            execution.conditionExecution();
+        conditionExecution.setTargets(targets);
+
+        while (!conditionExecution.isFinished()) {
+            FigureId targetId = conditionExecution.currentTarget();
+            if (!state.hasFigure(targetId)) {
+                conditionExecution.completeCurrentTarget();
+                continue;
+            }
+
+            Figure target = state.figure(targetId);
+            for (Conditions.ConditionDefinition condition
+                : conditionExecution.condition().conditions()) {
+                applyCondition(condition, target, events);
+            }
+            execution.markAbilityPerformed();
+            conditionExecution.completeCurrentTarget();
+        }
+
+        execution.completeCurrentAbility();
+        continueExecution(events);
+    }
+
+    private void applyCondition(
+        Conditions.ConditionDefinition definition,
+        Figure target,
+        List<GameEvent> events
+    ) {
+        if (target.isImmuneTo(definition.id())) {
+            return;
+        }
+        ActiveCondition.ConditionExpiration expiration =
+            switch (definition.expirationRule()) {
+                case UNTIL_REMOVED ->
+                    new ActiveCondition.ConditionExpiration.UntilRemoved();
+                case END_OF_TARGETS_NEXT_TURN ->
+                    new ActiveCondition.ConditionExpiration.EndOfTurnInRound(
+                        calculateExpirationRound(target.id())
+                    );
+            };
+
+        target.conditions().addCondition(definition.id(), expiration);
+        events.add(new ConditionAppliedEvent(
+            target.id(),
+            definition.id()
+        ));
     }
 
     private CommandResult executeCancel(CancelActionCommand command) {
@@ -608,20 +1071,28 @@ public final class ScenarioEngine {
             );
         }
 
-        FigureId currentActiveFigure = state.activeFigure();
+        FigureId currentActiveFigure = state.currentRound().activeFigure();
+        Figure figure = state.figure(currentActiveFigure);
         if (!command.figureId().equals(currentActiveFigure)) {
             return CommandResult.rejected(
                 "Only the active figure can end its turn"
             );
         }
 
-        // nächste bestimmen nach initiative order ... xd
-        FigureId nextFigure = new FigureId("monster-1");
+        List<GameEvent> events = new ArrayList<>();
 
-        state.setActiveFigure(nextFigure);
+        for (Conditions.ConditionId conditionId : figure.conditions().conditions().keySet()) {
+            if (figure.conditions().removeIfExpired(conditionId, state.currentRound().roundNumber())) {
+                events.add(new ConditionRemovedEvent(currentActiveFigure, conditionId));
+            }
+        }
+
+        state.currentRound().continueToNextFigure();
+
+        events.add(new TurnEndedEvent(currentActiveFigure));
 
         return CommandResult.accepted(
-            List.of(new TurnEndedEvent(currentActiveFigure))
+            events
         );
     }
 }

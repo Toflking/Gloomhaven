@@ -1,4 +1,4 @@
 package io.github.toflking.gloomhaven.rules.event;
 
-public sealed interface GameEvent permits ActionFinishedEvent, AttackAreaPlacementRequestedEvent, AttackTargetChoiceRequestedEvent, CancelActionEvent, FigureDamagedEvent, FigureDefeatedEvent, FigureMovedEvent, HealAreaPlacementRequestedEvent, HealTargetChoiceRequestedEvent, MoveChoiceRequestedEvent, SkipActionEvent, TurnEndedEvent, UndoPerformedEvent {
+public sealed interface GameEvent permits ActionFinishedEvent, AttackAreaPlacementRequestedEvent, AttackTargetChoiceRequestedEvent, CancelActionEvent, ConditionAppliedEvent, ConditionAreaPlacementRequestedEvent, ConditionRemovedEvent, ConditionTargetChoiceRequestedEvent, DamageAreaPlacementRequestedEvent, DamageTargetChoiceRequestedEvent, FigureDamagedEvent, FigureDefeatedEvent, FigureHealedEvent, FigureMovedEvent, HealAreaPlacementRequestedEvent, HealTargetChoiceRequestedEvent, MoveChoiceRequestedEvent, SkipActionEvent, TurnEndedEvent, UndoPerformedEvent {
 }
