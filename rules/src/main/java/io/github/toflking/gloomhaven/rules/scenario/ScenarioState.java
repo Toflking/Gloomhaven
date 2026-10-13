@@ -20,6 +20,9 @@ public class ScenarioState {
     private final Collection<Figure> figureView;
 
     private RoundState currentRound;
+    private final List<ActiveEffect> activeEffects;
+    private final Collection<ActiveEffect> activeEffectView;
+    private long nextActiveEffectId;
 
     private ScenarioPhase phase;
 
@@ -27,6 +30,9 @@ public class ScenarioState {
 
     public ScenarioState(HexBoard board) {
         this.board = board;
+        this.activeEffects = new ArrayList<>();
+        this.activeEffectView = Collections.unmodifiableList(activeEffects);
+        this.nextActiveEffectId = 1;
         this.figures = new HashMap<>();
         this.positions = new HashMap<>();
         this.figureView = Collections.unmodifiableCollection(figures.values());
@@ -46,8 +52,76 @@ public class ScenarioState {
         return currentRound;
     }
 
+    public Collection<ActiveEffect> activeEffects() {
+        return activeEffectView;
+    }
+
+    public FigureEffectView effectsFor(FigureId figureId) {
+        return new ActiveEffectResolver(this).effectsFor(figureId);
+    }
+
+    public Map<FigureId, FigureEffectView> figureEffectViews() {
+        ActiveEffectResolver resolver = new ActiveEffectResolver(this);
+        return figures.values().stream().collect(Collectors.toUnmodifiableMap(
+            Figure::id,
+            figure -> resolver.effectsFor(figure.id())
+        ));
+    }
+
+    public ActiveEffect addActiveEffect(
+        ActiveEffect.EffectSource source,
+        ActiveEffect.EffectDuration duration,
+        ActiveEffect.Effect effect
+    ) {
+        ActiveEffect activeEffect = new ActiveEffect(
+            new ActiveEffect.ActiveEffectId(
+                "effect-" + nextActiveEffectId++
+            ),
+            source,
+            duration,
+            effect
+        );
+        activeEffects.add(activeEffect);
+        return activeEffect;
+    }
+
+    public List<ActiveEffect> removeExpiredEffects() {
+        if (currentRound == null) {
+            return List.of();
+        }
+
+        List<ActiveEffect> removed = activeEffects.stream()
+            .filter(activeEffect ->
+                activeEffect.duration()
+                    instanceof ActiveEffect.EffectDuration.EndOfRound end
+                    && end.round() <= currentRound.roundNumber()
+            )
+            .toList();
+        activeEffects.removeAll(removed);
+        return removed;
+    }
+
+    public List<ActiveEffect> removeEffectsFromCard(
+        FigureId ownerId,
+        AbilitySource source
+    ) {
+        Objects.requireNonNull(ownerId, "ownerId");
+        Objects.requireNonNull(source, "source");
+        List<ActiveEffect> removed = activeEffects.stream()
+            .filter(activeEffect ->
+                activeEffect.duration()
+                    instanceof ActiveEffect.EffectDuration.WhileCardActive active
+                    && active.ownerId().equals(ownerId)
+                    && active.source().equals(source)
+            )
+            .toList();
+        activeEffects.removeAll(removed);
+        return removed;
+    }
+
     public void startNextRound(List<TurnOrderEntry> turnOrder) {
         Objects.requireNonNull(turnOrder, "turnOrder");
+        removeExpiredEffects();
         this.currentRound = new RoundState(
             currentRound == null
                 ? 1
@@ -171,6 +245,8 @@ public class ScenarioState {
         return new ScenarioSnapshot(
             figureSnapshots,
             positions,
+            activeEffects,
+            nextActiveEffectId,
             Optional.ofNullable(currentRound)
                 .map(RoundState::snapshot),
             phase,
@@ -198,6 +274,10 @@ public class ScenarioState {
 
         positions.clear();
         positions.putAll(snapshot.positions());
+
+        activeEffects.clear();
+        activeEffects.addAll(snapshot.activeEffects());
+        nextActiveEffectId = snapshot.nextActiveEffectId();
 
         currentRound = snapshot.currentRound()
             .map(RoundState::restore)

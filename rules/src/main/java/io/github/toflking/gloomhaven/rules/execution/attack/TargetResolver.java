@@ -21,6 +21,7 @@ import io.github.toflking.gloomhaven.rules.execution.attack.preview.EffectPrevie
 import io.github.toflking.gloomhaven.rules.figure.Figure;
 import io.github.toflking.gloomhaven.rules.figure.FigureId;
 import io.github.toflking.gloomhaven.rules.figure.identities.*;
+import io.github.toflking.gloomhaven.rules.scenario.ActiveEffectResolver;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioState;
 
 import java.util.Comparator;
@@ -172,6 +173,9 @@ public final class TargetResolver {
                 );
             int attackValue = execution.attackExecution()
                 .previewAmount(context);
+            ActiveEffectResolver effectResolver =
+                new ActiveEffectResolver(state);
+            int shield = effectResolver.shieldFor(targetId);
             int pierce = attack.effects().stream()
                 .filter(AttackEffect.Pierce.class::isInstance)
                 .map(AttackEffect.Pierce.class::cast)
@@ -180,11 +184,22 @@ public final class TargetResolver {
                     effect.amount().evaluate(context)
                 ))
                 .sum();
+            int effectiveShield = Math.max(0, shield - pierce);
             Figure target = state.figure(targetId);
             boolean poisoned = target
                 .conditions()
                 .contains(Conditions.POISON.id());
-            int projectedDamage = attackValue + (poisoned ? 1 : 0);
+            int projectedDamage = Math.max(
+                0,
+                attackValue + (poisoned ? 1 : 0) - effectiveShield
+            );
+            int retaliateDamage = projectedDamage
+                >= target.health().currentHealth()
+                ? 0
+                : effectResolver.retaliateDamageAgainst(
+                    targetId,
+                    execution.actor()
+                );
             List<Conditions.ConditionId> addedConditions = attack.effects()
                 .stream()
                 .filter(AttackEffect.Condition.class::isInstance)
@@ -197,11 +212,12 @@ public final class TargetResolver {
             previews.put(targetId, new AttackPreview(
                 attackValue,
                 0,
-                0,
+                shield,
                 pierce,
-                0,
+                effectiveShield,
                 poisoned,
                 projectedDamage,
+                retaliateDamage,
                 new EffectPreview(addedConditions, List.of())
             ));
         }

@@ -173,6 +173,7 @@ public final class FigureHealthBarRenderer implements Disposable {
                 camera,
                 viewport,
                 previewFor(
+                    scenario,
                     interactionState,
                     figure,
                     figurePosition
@@ -193,6 +194,7 @@ public final class FigureHealthBarRenderer implements Disposable {
                 camera,
                 viewport,
                 previewFor(
+                    scenario,
                     interactionState,
                     figure,
                     figurePosition
@@ -480,17 +482,24 @@ public final class FigureHealthBarRenderer implements Disposable {
     }
 
     private static ActionPreview previewFor(
+        ScenarioState scenario,
         ScenarioInteractionState interactionState,
         Figure figure,
         HexPosition figurePosition
     ) {
         if (interactionState instanceof AttackTargetInteraction attack) {
+            if (figure.id().equals(attack.getAttackerId())) {
+                return retaliationPreview(scenario, attack);
+            }
             return attackPreview(attack.previewFor(figure.id()));
         }
         if (interactionState instanceof HealTargetInteraction heal) {
             return healPreview(heal.previewFor(figure.id()));
         }
         if (interactionState instanceof AttackAreaPlacementInteraction attack) {
+            if (figure.id().equals(attack.attackerId())) {
+                return retaliationPreview(scenario, attack);
+            }
             return attackPreview(attack.previewFor(
                 figure.id(),
                 figurePosition
@@ -512,6 +521,37 @@ public final class FigureHealthBarRenderer implements Disposable {
             ));
         }
         return null;
+    }
+
+    private static ActionPreview retaliationPreview(
+        ScenarioState scenario,
+        AttackTargetInteraction attack
+    ) {
+        int damage = scenario.figures().stream()
+            .map(candidate -> attack.previewFor(candidate.id()))
+            .filter(java.util.Objects::nonNull)
+            .mapToInt(AttackPreview::retaliateDamage)
+            .sum();
+        return damage == 0
+            ? null
+            : new ActionPreview("Retaliate", damage, PreviewType.DAMAGE);
+    }
+
+    private static ActionPreview retaliationPreview(
+        ScenarioState scenario,
+        AttackAreaPlacementInteraction attack
+    ) {
+        int damage = scenario.figures().stream()
+            .map(candidate -> attack.previewFor(
+                candidate.id(),
+                scenario.positionOf(candidate.id())
+            ))
+            .filter(java.util.Objects::nonNull)
+            .mapToInt(AttackPreview::retaliateDamage)
+            .sum();
+        return damage == 0
+            ? null
+            : new ActionPreview("Retaliate", damage, PreviewType.DAMAGE);
     }
 
     private static EffectPreview effectPreviewFor(

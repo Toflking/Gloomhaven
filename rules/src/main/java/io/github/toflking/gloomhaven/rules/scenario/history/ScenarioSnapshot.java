@@ -7,8 +7,10 @@ import io.github.toflking.gloomhaven.rules.board.HexPosition;
 import io.github.toflking.gloomhaven.rules.conditions.Conditions;
 import io.github.toflking.gloomhaven.rules.scenario.RoundState;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioPhase;
+import io.github.toflking.gloomhaven.rules.scenario.ActiveEffect;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -17,6 +19,8 @@ import java.util.Set;
 public record ScenarioSnapshot(
     Map<FigureId, FigureSnapshot> figures,
     Map<FigureId, HexPosition> positions,
+    List<ActiveEffect> activeEffects,
+    long nextActiveEffectId,
     Optional<RoundState.Snapshot> currentRound,
     ScenarioPhase phase,
     Optional<ActionExecution.Snapshot> execution
@@ -27,6 +31,12 @@ public record ScenarioSnapshot(
             Map.copyOf(figures);
         Map<FigureId, HexPosition> copiedPositions =
             Map.copyOf(positions);
+        activeEffects = List.copyOf(activeEffects);
+        if (nextActiveEffectId < 1) {
+            throw new IllegalArgumentException(
+                "Next active effect ID must be positive"
+            );
+        }
         Objects.requireNonNull(currentRound, "currentRound");
         Objects.requireNonNull(phase, "phase");
         Objects.requireNonNull(execution, "execution");

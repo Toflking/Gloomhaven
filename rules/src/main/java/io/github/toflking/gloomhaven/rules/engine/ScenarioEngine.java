@@ -9,6 +9,9 @@ import io.github.toflking.gloomhaven.rules.ability.attack.effect.TargetEffectTim
 import io.github.toflking.gloomhaven.rules.ability.heal.HealAbility;
 import io.github.toflking.gloomhaven.rules.ability.damage.DamageAbility;
 import io.github.toflking.gloomhaven.rules.ability.condition.ConditionAbility;
+import io.github.toflking.gloomhaven.rules.ability.effect.EffectDurationRule;
+import io.github.toflking.gloomhaven.rules.ability.effect.RetaliateAbility;
+import io.github.toflking.gloomhaven.rules.ability.effect.ShieldAbility;
 import io.github.toflking.gloomhaven.rules.conditions.ActiveCondition;
 import io.github.toflking.gloomhaven.rules.conditions.Conditions;
 import io.github.toflking.gloomhaven.rules.execution.attack.*;
@@ -35,8 +38,13 @@ import io.github.toflking.gloomhaven.rules.scenario.ScenarioPhase;
 import io.github.toflking.gloomhaven.rules.scenario.history.CommandHistory;
 import io.github.toflking.gloomhaven.rules.scenario.history.ScenarioSnapshot;
 import io.github.toflking.gloomhaven.rules.scenario.ScenarioState;
+import io.github.toflking.gloomhaven.rules.scenario.ActiveEffect;
+import io.github.toflking.gloomhaven.rules.scenario.ActiveEffectResolver;
+import io.github.toflking.gloomhaven.rules.scenario.FigureEffectView;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class ScenarioEngine {
     private final ScenarioState state;
@@ -50,8 +58,13 @@ public final class ScenarioEngine {
     }
 
     public CommandResult execute(GameCommand command) {
+        Map<FigureId, FigureEffectView> effectsBefore = effectViews();
+
         if (command instanceof UndoCommand undo) {
-            return executeUndo(undo);
+            return withEffectChanges(
+                executeUndo(undo),
+                effectsBefore
+            );
         }
 
         ScenarioSnapshot stateBefore = state.snapshot();
@@ -68,7 +81,7 @@ public final class ScenarioEngine {
             commandHistory.record(command, stateBefore);
         }
 
-        return result;
+        return withEffectChanges(result, effectsBefore);
     }
 
     private CommandResult executeTracked(GameCommand command) {
@@ -337,11 +350,129 @@ public final class ScenarioEngine {
             case DamageAbility damage -> beginDamage(damage, events);
             case ConditionAbility condition ->
                 beginCondition(condition, events);
+            case ShieldAbility shield ->
+                applyShield(shield, events);
+            case RetaliateAbility retaliate ->
+                applyRetaliate(retaliate, events);
             default -> throw new IllegalStateException(
                 "No executor is registered for ability type: "
                     + currentAbility.getClass().getName()
             );
         }
+    }
+
+    private void applyShield(
+        ShieldAbility ability,
+        List<GameEvent> events
+    ) {
+        ActionExecution execution = state.execution();
+        int amount = Math.max(0, ability.amount().resolve(
+            AbilityExpressionContext.withoutTarget(
+                state,
+                execution.frame(),
+                execution.memory()
+            )
+        ));
+
+        if (amount > 0) {
+            state.addActiveEffect(
+                effectSource(execution),
+                effectDuration(ability.duration(), execution),
+                new ActiveEffect.Effect.Shield(amount, ability.scope())
+            );
+            execution.markAbilityPerformed();
+        }
+        execution.completeCurrentAbility();
+        continueExecution(events);
+    }
+
+    private void applyRetaliate(
+        RetaliateAbility ability,
+        List<GameEvent> events
+    ) {
+        ActionExecution execution = state.execution();
+        AbilityExpressionContext context =
+            AbilityExpressionContext.withoutTarget(
+                state,
+                execution.frame(),
+                execution.memory()
+            );
+        int amount = Math.max(0, ability.amount().resolve(context));
+        int range = Math.max(0, ability.range().resolve(context));
+
+        if (amount > 0 && range > 0) {
+            state.addActiveEffect(
+                effectSource(execution),
+                effectDuration(ability.duration(), execution),
+                new ActiveEffect.Effect.Retaliate(
+                    amount,
+                    range,
+                    ability.lineOfSight(),
+                    ability.scope()
+                )
+            );
+            execution.markAbilityPerformed();
+        }
+        execution.completeCurrentAbility();
+        continueExecution(events);
+    }
+
+    private ActiveEffect.EffectSource effectSource(
+        ActionExecution execution
+    ) {
+        return new ActiveEffect.EffectSource(
+            execution.owner(),
+            execution.actor(),
+            execution.controller(),
+            execution.source(),
+            execution.currentAbilityIndex(),
+            execution.memory().snapshot()
+        );
+    }
+
+    private ActiveEffect.EffectDuration effectDuration(
+        EffectDurationRule duration,
+        ActionExecution execution
+    ) {
+        return switch (duration) {
+            case END_OF_ROUND ->
+                new ActiveEffect.EffectDuration.EndOfRound(
+                    state.currentRound().roundNumber()
+                );
+            case WHILE_CARD_ACTIVE ->
+                new ActiveEffect.EffectDuration.WhileCardActive(
+                    execution.owner(),
+                    execution.source()
+                );
+        };
+    }
+
+    private Map<FigureId, FigureEffectView> effectViews() {
+        return state.figureEffectViews();
+    }
+
+    private CommandResult withEffectChanges(
+        CommandResult result,
+        Map<FigureId, FigureEffectView> before
+    ) {
+        if (!result.accepted()) {
+            return result;
+        }
+
+        Map<FigureId, FigureEffectView> after = effectViews();
+        Map<FigureId, FigureEffectView> changed = new LinkedHashMap<>();
+        after.forEach((figureId, view) -> {
+            if (!view.equals(before.get(figureId))) {
+                changed.put(figureId, view);
+            }
+        });
+        if (changed.isEmpty()) {
+            return result;
+        }
+
+        List<GameEvent> events = new ArrayList<>(result.events());
+        events.add(new FigureEffectsChangedEvent(changed));
+        return CommandResult.accepted(events);
     }
 
     private void beginMove(MoveAbility move, List<GameEvent> events) {
@@ -585,6 +716,9 @@ public final class ScenarioEngine {
         );
 
         List<AttackEffect> effects = attackExecution.attack().effects();
+        ActiveEffectResolver effectResolver =
+            new ActiveEffectResolver(state);
+        boolean attackerDefeated = false;
 
         while (!attackExecution.isFinished()) {
             AttackInstance attackInstance =
@@ -607,10 +741,24 @@ public final class ScenarioEngine {
             Figure target = state.figure(attackInstance.targetId());
 
             int attackValue = attackExecution.amountForCurrentAttack(context);
-            int damage = attackValue
-                + (target.conditions().contains(Conditions.POISON.id())
-                    ? 1
-                    : 0);
+            int shield = effectResolver.shieldFor(target.id());
+            int pierce = effects.stream()
+                .filter(AttackEffect.Pierce.class::isInstance)
+                .map(AttackEffect.Pierce.class::cast)
+                .mapToInt(effect -> Math.max(
+                    0,
+                    effect.amount().evaluate(context)
+                ))
+                .sum();
+            int effectiveShield = Math.max(0, shield - pierce);
+            int damage = Math.max(
+                0,
+                attackValue
+                    + (target.conditions().contains(Conditions.POISON.id())
+                        ? 1
+                        : 0)
+                    - effectiveShield
+            );
             state.damageFigure(target.id(), damage);
 
             execution.markAbilityPerformed();
@@ -637,6 +785,34 @@ public final class ScenarioEngine {
                     target,
                     events
                 );
+
+                int retaliateDamage =
+                    effectResolver.retaliateDamageAgainst(
+                        target.id(),
+                        execution.actor()
+                    );
+                if (retaliateDamage > 0
+                    && state.hasFigure(execution.actor())) {
+                    Figure attacker = state.figure(execution.actor());
+                    state.damageFigure(attacker.id(), retaliateDamage);
+                    events.add(new FigureDamagedEvent(
+                        attacker.id(),
+                        retaliateDamage,
+                        attacker.health().currentHealth(),
+                        target.id()
+                    ));
+
+                    if (attacker.isDefeated()) {
+                        HexPosition defeatedAt =
+                            state.positionOf(attacker.id());
+                        events.add(new FigureDefeatedEvent(
+                            attacker.id(),
+                            defeatedAt
+                        ));
+                        state.removeFigure(attacker.id());
+                        attackerDefeated = true;
+                    }
+                }
             }
 
             if (target.isDefeated()) {
@@ -649,6 +825,15 @@ public final class ScenarioEngine {
             }
 
             attackExecution.completeCurrentAttack();
+            if (attackerDefeated) {
+                break;
+            }
+        }
+
+        if (attackerDefeated) {
+            execution.terminate();
+            continueExecution(events);
+            return;
         }
 
         execution.completeCurrentAbility();

@@ -332,6 +332,15 @@ public final class ActionExecution {
         advance();
     }
 
+    public void terminate() {
+        clearPendingChoice();
+        attackExecution = null;
+        healExecution = null;
+        damageExecution = null;
+        conditionExecution = null;
+        currentAbilityIndex = abilities.size();
+    }
+
     public boolean canCancel() {
         return !cancellationLocked;
     }

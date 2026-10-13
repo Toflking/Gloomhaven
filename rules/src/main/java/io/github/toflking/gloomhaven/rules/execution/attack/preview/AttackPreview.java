@@ -8,6 +8,7 @@ public record AttackPreview(
     int effectiveShield,
     boolean poison,
     int projectedDamage,
+    int retaliateDamage,
     EffectPreview effects
 ) {
     public AttackPreview(
@@ -27,7 +28,31 @@ public record AttackPreview(
             effectiveShield,
             poison,
             projectedDamage,
+            0,
             EffectPreview.empty()
+        );
+    }
+
+    public AttackPreview(
+        int attackValueBeforeModifier,
+        int assumedModifier,
+        int shield,
+        int pierce,
+        int effectiveShield,
+        boolean poison,
+        int projectedDamage,
+        EffectPreview effects
+    ) {
+        this(
+            attackValueBeforeModifier,
+            assumedModifier,
+            shield,
+            pierce,
+            effectiveShield,
+            poison,
+            projectedDamage,
+            0,
+            effects
         );
     }
 }

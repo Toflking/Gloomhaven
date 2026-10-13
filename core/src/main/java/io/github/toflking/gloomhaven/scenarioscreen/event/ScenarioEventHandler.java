@@ -101,6 +101,11 @@ public final class ScenarioEventHandler {
             }
             case FigureMovedEvent ignored -> {
             }
+            case FigureEffectsChangedEvent ignored -> {
+                // The in-process renderer reads the current effect views
+                // directly from ScenarioState. Detached clients can consume
+                // this event instead.
+            }
             case ConditionAppliedEvent ignored -> {
             }
             case ConditionRemovedEvent ignored -> {
